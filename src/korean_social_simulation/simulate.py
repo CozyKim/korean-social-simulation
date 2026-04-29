@@ -142,7 +142,7 @@ async def _run_async(
     return await asyncio.gather(*coros)
 
 
-def simulate(
+async def asimulate(
     *,
     scenario: Scenario,
     n: int = 200,
@@ -155,25 +155,10 @@ def simulate(
     concurrency: int | None = None,
     runs_root: Path | str = "runs",
 ) -> Run:
-    """end-to-end 시뮬레이션 1회 실행 → Run 반환.
+    """end-to-end 시뮬레이션 1회 실행 → Run 반환 (async).
 
-    데이터셋 로드, stratified 샘플링(캐시), 동적 ReactionModel 생성,
-    asyncio 기반 병렬 LLM 호출, 산출물 디렉터리 작성을 한 번에 수행한다.
-
-    Args:
-        scenario: 입력 시나리오.
-        n: 샘플 크기 (기본 200).
-        model: ``llm.factory.available_models()`` 키 (기본 ``vllm-qwen``).
-        seed: 샘플링 재현성 시드.
-        filters: 모집단 필터 (예 ``{"province": "서울특별시"}``).
-        action_intent_choices: ReactionModel의 ``action_intent`` enum 오버라이드.
-        extra_fields: 추가 reaction 필드 ``{"name": (type, "desc")}``.
-        min_cell_threshold: 희소 셀 경고 기준 (0이면 비활성).
-        concurrency: 동시 LLM 호출 수. ``None`` 이면 backend 기본값.
-        runs_root: 산출물 루트 디렉터리.
-
-    Returns:
-        ``Run`` 인스턴스 — 산출물 디렉터리를 가리킨다.
+    노트북·Streamlit·FastAPI 등 이미 이벤트 루프가 떠 있는 환경에서는 이
+    async 진입점을 ``await`` 한다. 동기 컨텍스트에서는 :func:`simulate` 를 사용.
 
     Raises:
         RuntimeError: 모든 페르소나의 LLM 호출이 실패해 결과를 만들 수 없을 때.
@@ -197,8 +182,8 @@ def simulate(
     llm = get_llm(model)
     conc = concurrency or DEFAULT_CONCURRENCY.get(model, 8)
 
-    rows = asyncio.run(
-        _run_async(sample, scenario, llm, reaction_model, concurrency=conc)
+    rows = await _run_async(
+        sample, scenario, llm, reaction_model, concurrency=conc
     )
     df = pd.DataFrame(rows)
     df["model"] = model
@@ -226,6 +211,85 @@ def simulate(
             "concurrency": conc,
             "min_cell_threshold": min_cell_threshold,
             "extra_field_names": list((extra_fields or {}).keys()),
+            "extra_fields": _serialize_extra_fields(extra_fields),
             "action_intent_choices": action_intent_choices,
         },
     )
+
+
+def simulate(
+    *,
+    scenario: Scenario,
+    n: int = 200,
+    model: str = "vllm-qwen",
+    seed: int = 42,
+    filters: dict[str, Any] | None = None,
+    action_intent_choices: list[str] | None = None,
+    extra_fields: dict[str, tuple[type, str]] | None = None,
+    min_cell_threshold: int = 5,
+    concurrency: int | None = None,
+    runs_root: Path | str = "runs",
+) -> Run:
+    """동기 wrapper — 실행 중인 이벤트 루프가 있으면 명확히 안내하며 실패한다.
+
+    노트북/pytest-asyncio/FastAPI처럼 이미 이벤트 루프가 떠 있는 환경에서는
+    ``RuntimeError`` 를 발생시키며 :func:`asimulate` 사용을 안내한다.
+
+    Args:
+        scenario: 입력 시나리오.
+        n: 샘플 크기 (기본 200).
+        model: ``llm.factory.available_models()`` 키.
+        seed: 샘플링 재현성 시드.
+        filters: 모집단 필터.
+        action_intent_choices: ReactionModel의 ``action_intent`` enum 오버라이드.
+        extra_fields: 추가 reaction 필드.
+        min_cell_threshold: 희소 셀 경고 기준 (0이면 비활성).
+        concurrency: 동시 LLM 호출 수.
+        runs_root: 산출물 루트 디렉터리.
+
+    Returns:
+        ``Run`` 인스턴스.
+
+    Raises:
+        RuntimeError: 이벤트 루프가 이미 실행 중이거나, 모든 페르소나의 LLM
+            호출이 실패한 경우.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        raise RuntimeError(
+            "simulate()는 동기 컨텍스트에서만 호출할 수 있습니다. "
+            "노트북·async 환경에서는 `await asimulate(...)` 를 사용하세요."
+        )
+
+    return asyncio.run(
+        asimulate(
+            scenario=scenario,
+            n=n,
+            model=model,
+            seed=seed,
+            filters=filters,
+            action_intent_choices=action_intent_choices,
+            extra_fields=extra_fields,
+            min_cell_threshold=min_cell_threshold,
+            concurrency=concurrency,
+            runs_root=runs_root,
+        )
+    )
+
+
+def _serialize_extra_fields(
+    extra_fields: dict[str, tuple[type, str]] | None,
+) -> dict[str, dict[str, str]] | None:
+    """``extra_fields`` 정의를 scenario.json에 안전히 저장 가능한 형태로 변환.
+
+    ``type`` 객체는 직렬화 불가하므로 이름 문자열로 보존한다.
+    """
+    if not extra_fields:
+        return None
+    return {
+        name: {"type": typ.__name__, "description": desc}
+        for name, (typ, desc) in extra_fields.items()
+    }

@@ -14,6 +14,7 @@ except ImportError as exc:  # pragma: no cover
         "streamlit이 설치되지 않았습니다. `uv sync --extra dashboard`로 설치하세요."
     ) from exc
 
+from korean_social_simulation.report.charts import count_sparse_strata
 from korean_social_simulation.run import Run
 
 
@@ -36,14 +37,12 @@ def main() -> None:
     )
 
     threshold = run.meta.get("min_cell_threshold", 5)
-    if threshold > 0:
-        sparse = df.groupby(["province", "sex"]).size()
-        n_sparse = int((sparse < threshold).sum())
-        if n_sparse:
-            st.warning(
-                f"⚠ {n_sparse}개 strata cell이 min_cell_threshold={threshold} 미만 — "
-                f"세그먼트 결론 일반화에 주의."
-            )
+    n_sparse = count_sparse_strata(df, threshold=threshold)
+    if n_sparse:
+        st.warning(
+            f"⚠ {n_sparse}개 strata cell(`sex × age_band × province`)이 "
+            f"min_cell_threshold={threshold} 미만 — 세그먼트 결론 일반화에 주의."
+        )
 
     with st.sidebar:
         st.header("필터")

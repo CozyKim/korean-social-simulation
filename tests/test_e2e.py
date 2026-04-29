@@ -1,8 +1,10 @@
 """end-to-end 시뮬: tiny 모집단 + fake LLM → run 디렉터리 검증."""
 
+import json
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -12,6 +14,8 @@ from korean_social_simulation.scenario import Scenario
 
 class _FakeChatStructured(BaseChatModel):
     """structured + text 둘 다 지원하는 fake."""
+
+    extra_canned: dict = {}
 
     @property
     def _llm_type(self) -> str:
@@ -34,6 +38,8 @@ class _FakeChatStructured(BaseChatModel):
             "concerns": [],
             "quote": "사 먹어볼게요",
         }
+        for name, (typ, _desc) in self.extra_canned.items():
+            canned[name] = typ() if callable(typ) else 0
 
         class _Bound:
             async def ainvoke(self, _messages):
@@ -119,3 +125,87 @@ def test_e2e_simulation_creates_run_and_report(tmp_path, monkeypatch):
     md = run.report(insights_model=None)
     assert md.exists()
     assert "e2e" in md.read_text(encoding="utf-8")
+
+
+async def test_asimulate_runs_inside_running_event_loop(tmp_path, monkeypatch):
+    """이미 실행 중인 이벤트 루프에서도 ``asimulate`` 는 동작한다."""
+    monkeypatch.setenv("KSS_CACHE_DIR", str(tmp_path / "cache"))
+
+    fake_pop = _tiny_population(500)
+    with (
+        patch(
+            "korean_social_simulation.simulate.load_personas",
+            return_value=(_FakeDataset(fake_pop), "fp_test"),
+        ),
+        patch(
+            "korean_social_simulation.simulate.get_llm",
+            return_value=_FakeChatStructured(),
+        ),
+    ):
+        from korean_social_simulation.simulate import asimulate
+
+        run = await asimulate(
+            scenario=Scenario(title="async-e2e", stimulus="x"),
+            n=10,
+            model="vllm-qwen",
+            seed=1,
+            runs_root=tmp_path / "runs",
+            min_cell_threshold=0,
+        )
+
+    md = await run.areport(insights_model=None)
+    assert md.exists()
+    assert "async-e2e" in md.read_text(encoding="utf-8")
+
+
+async def test_simulate_in_running_loop_raises(tmp_path, monkeypatch):
+    """동기 ``simulate()`` 는 이벤트 루프 안에서 호출되면 명확히 실패한다."""
+    monkeypatch.setenv("KSS_CACHE_DIR", str(tmp_path / "cache"))
+
+    from korean_social_simulation.simulate import simulate
+
+    with pytest.raises(RuntimeError, match="asimulate"):
+        simulate(
+            scenario=Scenario(title="x", stimulus="x"),
+            n=1,
+            runs_root=tmp_path / "runs",
+        )
+
+
+def test_extra_fields_full_definition_is_persisted(tmp_path, monkeypatch):
+    """``extra_fields`` 정의(이름·타입·설명)가 ``scenario.json`` 에 보존된다."""
+    monkeypatch.setenv("KSS_CACHE_DIR", str(tmp_path / "cache"))
+
+    fake_pop = _tiny_population(300)
+    extra = {
+        "purchase_likelihood": (int, "0~100, 구매 가능성"),
+        "price_sensitivity": (int, "0~100, 가격 민감도"),
+    }
+    with (
+        patch(
+            "korean_social_simulation.simulate.load_personas",
+            return_value=(_FakeDataset(fake_pop), "fp_test"),
+        ),
+        patch(
+            "korean_social_simulation.simulate.get_llm",
+            return_value=_FakeChatStructured(extra_canned=extra),
+        ),
+    ):
+        from korean_social_simulation.simulate import simulate
+
+        run = simulate(
+            scenario=Scenario(title="extras", stimulus="x"),
+            n=5,
+            model="vllm-qwen",
+            seed=1,
+            runs_root=tmp_path / "runs",
+            min_cell_threshold=0,
+            extra_fields=extra,
+        )
+
+    data = json.loads((run.path / "scenario.json").read_text(encoding="utf-8"))
+    persisted = data["meta"]["extra_fields"]
+    assert persisted == {
+        "purchase_likelihood": {"type": "int", "description": "0~100, 구매 가능성"},
+        "price_sensitivity": {"type": "int", "description": "0~100, 가격 민감도"},
+    }

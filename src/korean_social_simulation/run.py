@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -36,20 +38,35 @@ class Run:
     ) -> Run:
         """산출물 디렉터리를 새로 만들고 scenario/reactions/sample을 직렬화한다.
 
+        같은 ``run_id`` 가 이미 존재하면 ``FileExistsError`` 를 던진다 — 기존 run을
+        조용히 덮어쓰지 않도록 보호한다. 자동 생성되는 ID는 microseconds + uuid
+        suffix를 포함해 같은 초의 충돌을 방지한다.
+
         Args:
             root: 모든 run을 모아두는 루트 (예: ``runs/``).
             scenario: 입력 시나리오.
             reactions: 반응 결과 DataFrame.
             sample: 사용된 샘플 DataFrame (페르소나 메타).
             meta: 재현성·LLM 정보 (model, n, seed, dataset_fingerprint 등).
-            run_id: 명시적 ID. 없으면 ``YYYYMMDD-HHMMSS-{slug}`` 자동 생성.
+            run_id: 명시적 ID. 없으면 자동 생성.
 
         Returns:
             새로 생성된 Run.
+
+        Raises:
+            FileExistsError: ``run_id`` 디렉터리가 이미 존재할 때.
         """
         run_id = run_id or _new_run_id(scenario.slug())
         path = Path(root) / run_id
-        path.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            path.mkdir(exist_ok=False)
+        except FileExistsError as exc:
+            raise FileExistsError(
+                f"Run directory already exists: {path}. "
+                "기존 run 보호를 위해 덮어쓰지 않습니다. "
+                "다른 run_id로 다시 시도하세요."
+            ) from exc
         try:
             (path / "charts").mkdir(exist_ok=True)
             (path / "scenario.json").write_text(
@@ -81,25 +98,22 @@ class Run:
         df = pd.read_parquet(path / "reactions.parquet")
         return cls(path=path, scenario=scenario, df=df, meta=data["meta"])
 
-    def report(
+    async def areport(
         self,
         *,
         insights_model: str | None = None,
     ) -> Path:
-        """리포트를 생성하고 ``report.md`` 경로를 반환한다.
+        """리포트 생성 (async). ``report.md`` 경로를 반환한다.
 
-        ``insights_model`` 이 ``None`` 이면 LLM 종합 인사이트는 생략하고
-        통계/차트만 포함한 리포트를 만든다.
+        ``insights_model`` 이 ``None`` 이면 LLM 종합 인사이트는 생략한다.
         """
-        import asyncio
-
         from korean_social_simulation.llm.factory import get_llm
         from korean_social_simulation.report.insights import generate_insights
         from korean_social_simulation.report.markdown import render_report
 
         if insights_model is not None:
             llm = get_llm(insights_model)
-            insights = asyncio.run(generate_insights(self.df, llm=llm))
+            insights = await generate_insights(self.df, llm=llm)
         else:
             insights = "_(insights_model이 지정되지 않아 LLM 종합 인사이트는 생략됨)_"
 
@@ -111,7 +125,29 @@ class Run:
             insights=insights,
         )
 
+    def report(
+        self,
+        *,
+        insights_model: str | None = None,
+    ) -> Path:
+        """동기 wrapper — 실행 중인 이벤트 루프가 있으면 명확히 안내하며 실패한다.
+
+        async 컨텍스트에서는 :meth:`areport` 를 ``await`` 한다.
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            raise RuntimeError(
+                "Run.report()는 동기 컨텍스트에서만 호출할 수 있습니다. "
+                "노트북·async 환경에서는 `await run.areport(...)` 를 사용하세요."
+            )
+        return asyncio.run(self.areport(insights_model=insights_model))
+
 
 def _new_run_id(slug: str) -> str:
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    return f"{ts}-{slug}"
+    """타임스탬프(microseconds) + uuid suffix로 run_id 충돌을 방지한다."""
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    suffix = uuid.uuid4().hex[:6]
+    return f"{ts}-{suffix}-{slug}"

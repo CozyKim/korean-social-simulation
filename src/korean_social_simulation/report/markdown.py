@@ -9,6 +9,7 @@ import pandas as pd
 
 from korean_social_simulation.report.charts import (
     action_intent_bar,
+    count_sparse_strata,
     intensity_hist,
     segment_heatmap,
     stance_donut,
@@ -59,14 +60,12 @@ def _render_markdown(
     avg_latency = int(df["latency_ms"].mean()) if n else 0
     sparse_note = ""
     threshold = meta.get("min_cell_threshold", 5)
-    if threshold > 0:
-        cells = df.groupby(["province", "sex"]).size()
-        sparse_n = (cells < threshold).sum()
-        if sparse_n:
-            sparse_note = (
-                f"> ⚠ **희소 strata 경고**: {sparse_n}개 셀이 임계값 "
-                f"{threshold} 미만입니다. 세그먼트 결론 일반화에 주의.\n"
-            )
+    sparse_n = count_sparse_strata(df, threshold=threshold)
+    if sparse_n:
+        sparse_note = (
+            f"> ⚠ **희소 strata 경고**: {sparse_n}개 셀(`sex × age_band × province`) "
+            f"이 임계값 {threshold} 미만입니다. 세그먼트 결론 일반화에 주의.\n"
+        )
 
     fingerprint = meta.get("dataset_fingerprint", "")
     fingerprint_short = fingerprint[:12] if fingerprint else ""

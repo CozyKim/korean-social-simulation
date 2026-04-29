@@ -77,7 +77,8 @@ def segment_heatmap(
 ) -> None:
     """segment(sex/age_band/province) × stance 비율 히트맵.
 
-    cell 카운트가 ``min_cell`` 미만이면 회색으로 마스킹한다.
+    각 (segment, stance) **셀**의 카운트가 ``min_cell`` 미만이면 그 셀만 회색으로
+    마스킹한다 (행 전체가 아니라). 행 합계 ``n`` 은 y축 라벨에 함께 표기한다.
     """
     work = df.copy()
     if segment == "age_band":
@@ -90,7 +91,8 @@ def segment_heatmap(
     )
     totals = counts.sum(axis=1)
     ratios = counts.div(totals, axis=0).fillna(0)
-    masked = np.where(totals.values[:, None] < min_cell, np.nan, ratios.values)
+    cell_counts = counts.values
+    masked = np.where(cell_counts < min_cell, np.nan, ratios.values)
 
     fig, ax = plt.subplots(figsize=(6, max(2.5, 0.4 * len(ratios))))
     im = ax.imshow(masked, aspect="auto", cmap="RdYlGn", vmin=0, vmax=1)
@@ -98,9 +100,11 @@ def segment_heatmap(
     ax.set_xticklabels(_STANCE_ORDER)
     ax.set_yticks(range(len(ratios.index)))
     ax.set_yticklabels([f"{idx} (n={int(totals[idx])})" for idx in ratios.index])
-    for i, t in enumerate(totals.values):
-        for j, v in enumerate(ratios.values[i]):
-            color = "lightgray" if t < min_cell else "black"
+    for i in range(cell_counts.shape[0]):
+        for j in range(cell_counts.shape[1]):
+            v = ratios.values[i, j]
+            cell_n = int(cell_counts[i, j])
+            color = "lightgray" if cell_n < min_cell else "black"
             ax.text(
                 j, i, f"{v:.0%}", ha="center", va="center", color=color, fontsize=8
             )
@@ -109,3 +113,17 @@ def segment_heatmap(
     fig.tight_layout()
     fig.savefig(out_path, dpi=120)
     plt.close(fig)
+
+
+def count_sparse_strata(df: pd.DataFrame, *, threshold: int) -> int:
+    """샘플러와 동일한 ``sex × age_band × province`` strata 기준 희소 셀 개수.
+
+    리포트와 대시보드의 sparse 경고가 sampler와 일치하도록 사용한다.
+    ``threshold <= 0`` 이면 0을 반환한다.
+    """
+    if threshold <= 0:
+        return 0
+    work = df.copy()
+    work["_band"] = work["age"].map(age_band)
+    cells = work.groupby(["sex", "_band", "province"]).size()
+    return int((cells < threshold).sum())
