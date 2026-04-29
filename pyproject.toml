@@ -76,3 +76,4 @@ line-ending = "auto"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = ["live: requires HF network access"]
