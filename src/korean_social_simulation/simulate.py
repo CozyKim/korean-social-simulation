@@ -1,4 +1,4 @@
-"""시뮬레이션 코어 — 1 페르소나 1 호출 + 병렬 실행."""
+"""시뮬레이션 코어 — 1 페르소나 1 호출 + 병렬 실행 + 공개 simulate()."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -13,11 +14,17 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ValidationError
 
+from korean_social_simulation._version import SAMPLER_VERSION
+from korean_social_simulation.data.loader import load_personas
+from korean_social_simulation.data.sampler import sample_personas_cached
+from korean_social_simulation.llm.factory import DEFAULT_CONCURRENCY, get_llm
 from korean_social_simulation.llm.prompts import (
     SIMULATION_INSTRUCTIONS,
     format_persona_block,
     format_scenario_block,
 )
+from korean_social_simulation.reaction import build_reaction_model
+from korean_social_simulation.run import Run
 from korean_social_simulation.scenario import Scenario
 
 logger = logging.getLogger(__name__)
@@ -133,3 +140,92 @@ async def _run_async(
     rows = sample.to_dict(orient="records")
     coros = [_one(row) for row in rows]
     return await asyncio.gather(*coros)
+
+
+def simulate(
+    *,
+    scenario: Scenario,
+    n: int = 200,
+    model: str = "vllm-qwen",
+    seed: int = 42,
+    filters: dict[str, Any] | None = None,
+    action_intent_choices: list[str] | None = None,
+    extra_fields: dict[str, tuple[type, str]] | None = None,
+    min_cell_threshold: int = 5,
+    concurrency: int | None = None,
+    runs_root: Path | str = "runs",
+) -> Run:
+    """end-to-end 시뮬레이션 1회 실행 → Run 반환.
+
+    데이터셋 로드, stratified 샘플링(캐시), 동적 ReactionModel 생성,
+    asyncio 기반 병렬 LLM 호출, 산출물 디렉터리 작성을 한 번에 수행한다.
+
+    Args:
+        scenario: 입력 시나리오.
+        n: 샘플 크기 (기본 200).
+        model: ``llm.factory.available_models()`` 키 (기본 ``vllm-qwen``).
+        seed: 샘플링 재현성 시드.
+        filters: 모집단 필터 (예 ``{"province": "서울특별시"}``).
+        action_intent_choices: ReactionModel의 ``action_intent`` enum 오버라이드.
+        extra_fields: 추가 reaction 필드 ``{"name": (type, "desc")}``.
+        min_cell_threshold: 희소 셀 경고 기준 (0이면 비활성).
+        concurrency: 동시 LLM 호출 수. ``None`` 이면 backend 기본값.
+        runs_root: 산출물 루트 디렉터리.
+
+    Returns:
+        ``Run`` 인스턴스 — 산출물 디렉터리를 가리킨다.
+
+    Raises:
+        RuntimeError: 모든 페르소나의 LLM 호출이 실패해 결과를 만들 수 없을 때.
+    """
+    population_ds, dataset_fingerprint = load_personas()
+    population_df = population_ds.to_pandas()
+
+    sample = sample_personas_cached(
+        population_df,
+        n=n,
+        seed=seed,
+        dataset_fingerprint=dataset_fingerprint,
+        filters=filters,
+        min_cell_threshold=min_cell_threshold,
+    )
+
+    reaction_model = build_reaction_model(
+        action_intent_choices=action_intent_choices,
+        extra_fields=extra_fields,
+    )
+    llm = get_llm(model)
+    conc = concurrency or DEFAULT_CONCURRENCY.get(model, 8)
+
+    rows = asyncio.run(
+        _run_async(sample, scenario, llm, reaction_model, concurrency=conc)
+    )
+    df = pd.DataFrame(rows)
+    df["model"] = model
+
+    if "stance" not in df.columns or df["stance"].isna().all():
+        first_errors = df["error"].dropna().head(3).tolist()
+        raise RuntimeError(
+            f"All {len(df)} simulations failed. "
+            f"Sample errors: {first_errors}. "
+            f"Check the run directory for details."
+        )
+
+    return Run.create(
+        root=Path(runs_root),
+        scenario=scenario,
+        reactions=df,
+        sample=sample,
+        meta={
+            "model": model,
+            "n": n,
+            "seed": seed,
+            "filters": filters or {},
+            "dataset_fingerprint": dataset_fingerprint,
+            "sampler_version": SAMPLER_VERSION,
+            "concurrency": conc,
+            "min_cell_threshold": min_cell_threshold,
+            "extra_field_names": list((extra_fields or {}).keys()),
+            "action_intent_choices": action_intent_choices,
+        },
+    )
