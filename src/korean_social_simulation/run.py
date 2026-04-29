@@ -81,6 +81,36 @@ class Run:
         df = pd.read_parquet(path / "reactions.parquet")
         return cls(path=path, scenario=scenario, df=df, meta=data["meta"])
 
+    def report(
+        self,
+        *,
+        insights_model: str | None = None,
+    ) -> Path:
+        """리포트를 생성하고 ``report.md`` 경로를 반환한다.
+
+        ``insights_model`` 이 ``None`` 이면 LLM 종합 인사이트는 생략하고
+        통계/차트만 포함한 리포트를 만든다.
+        """
+        import asyncio
+
+        from korean_social_simulation.llm.factory import get_llm
+        from korean_social_simulation.report.insights import generate_insights
+        from korean_social_simulation.report.markdown import render_report
+
+        if insights_model is not None:
+            llm = get_llm(insights_model)
+            insights = asyncio.run(generate_insights(self.df, llm=llm))
+        else:
+            insights = "_(insights_model이 지정되지 않아 LLM 종합 인사이트는 생략됨)_"
+
+        return render_report(
+            out_dir=self.path,
+            scenario=self.scenario,
+            df=self.df,
+            meta=self.meta,
+            insights=insights,
+        )
+
 
 def _new_run_id(slug: str) -> str:
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
