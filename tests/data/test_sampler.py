@@ -1,13 +1,16 @@
 """data.sampler 단위 테스트 — pandas 픽스처로 HF 의존성 제거."""
 
 import logging
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from korean_social_simulation.data.sampler import (
     age_band,
+    cache_key,
     sample_personas,
+    sample_personas_cached,
 )
 
 
@@ -90,3 +93,52 @@ def test_sample_n_exceeds_population_raises(fake_population):
     """n > 가용 모집단이면 명확한 ValueError."""
     with pytest.raises(ValueError, match="exceeds"):
         sample_personas(fake_population, n=10_000, seed=42)
+
+
+def test_cache_key_changes_with_each_dimension():
+    base = dict(seed=1, n=100, filters=None, dataset_fingerprint="abc", sampler_version="1")
+    assert cache_key(**base) == cache_key(**base)  # 결정적
+    assert cache_key(**{**base, "seed": 2}) != cache_key(**base)
+    assert cache_key(**{**base, "n": 200}) != cache_key(**base)
+    assert cache_key(**{**base, "filters": {"province": "서울특별시"}}) != cache_key(**base)
+    assert cache_key(**{**base, "dataset_fingerprint": "xyz"}) != cache_key(**base)
+    assert cache_key(**{**base, "sampler_version": "2"}) != cache_key(**base)
+
+
+def test_cache_hit_returns_same_sample(fake_population, tmp_cache_dir):
+    s1 = sample_personas_cached(
+        fake_population,
+        n=100,
+        seed=42,
+        dataset_fingerprint="fp1",
+        cache_dir=tmp_cache_dir,
+    )
+    s2 = sample_personas_cached(
+        fake_population,
+        n=100,
+        seed=42,
+        dataset_fingerprint="fp1",
+        cache_dir=tmp_cache_dir,
+    )
+    assert list(s1["uuid"]) == list(s2["uuid"])
+
+
+def test_cache_miss_on_fingerprint_change(fake_population, tmp_cache_dir, caplog):
+    sample_personas_cached(
+        fake_population,
+        n=100,
+        seed=42,
+        dataset_fingerprint="fp1",
+        cache_dir=tmp_cache_dir,
+    )
+    # 같은 키지만 다른 fingerprint를 메타에 강제 주입했다고 가정 — 새 fingerprint로 다시 호출
+    sample_personas_cached(
+        fake_population,
+        n=100,
+        seed=42,
+        dataset_fingerprint="fp2",
+        cache_dir=tmp_cache_dir,
+    )
+    # 캐시 파일이 두 개 존재해야 함 (fp1, fp2 각각)
+    files = list(Path(tmp_cache_dir / "samples").glob("*.parquet"))
+    assert len(files) == 2

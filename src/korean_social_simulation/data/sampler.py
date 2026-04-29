@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import os
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from korean_social_simulation._version import SAMPLER_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -137,3 +145,110 @@ def _warn_sparse_cells(sample: pd.DataFrame, threshold: int) -> None:
             threshold,
             sample_strs,
         )
+
+
+def _default_cache_dir() -> Path:
+    """기본 캐시 디렉터리 — `KSS_CACHE_DIR` 환경변수 우선, 없으면 `~/.cache/korean_social_simulation`."""
+    env = os.environ.get("KSS_CACHE_DIR")
+    if env:
+        return Path(env)
+    return Path.home() / ".cache" / "korean_social_simulation"
+
+
+def cache_key(
+    *,
+    seed: int,
+    n: int,
+    filters: dict[str, Any] | None,
+    dataset_fingerprint: str,
+    sampler_version: str = SAMPLER_VERSION,
+) -> str:
+    """결정적 캐시 키 — 다섯 축이 모두 같아야 같은 키.
+
+    Args:
+        seed: 샘플링 시드.
+        n: 샘플 크기.
+        filters: 컬럼별 필터 dict (None이면 빈 dict로 정규화).
+        dataset_fingerprint: 모집단 데이터 fingerprint (앞 12자만 키에 사용).
+        sampler_version: 샘플러 알고리즘 버전 — bump 시 캐시 일괄 무효화.
+
+    Returns:
+        `{seed}-{n}-{filters_hash}-{fingerprint12}-{version}` 형태의 결정적 키.
+    """
+    filters_str = json.dumps(filters or {}, sort_keys=True, ensure_ascii=False)
+    filters_hash = hashlib.sha1(filters_str.encode("utf-8")).hexdigest()[:8]
+    return f"{seed}-{n}-{filters_hash}-{dataset_fingerprint[:12]}-{sampler_version}"
+
+
+def sample_personas_cached(
+    population: pd.DataFrame,
+    *,
+    n: int,
+    seed: int,
+    dataset_fingerprint: str,
+    filters: dict[str, Any] | None = None,
+    min_cell_threshold: int = 5,
+    cache_dir: Path | None = None,
+    sampler_version: str = SAMPLER_VERSION,
+) -> pd.DataFrame:
+    """`sample_personas`의 캐시 wrapper — fingerprint 불일치 시 재생성.
+
+    parquet 파일에 schema metadata로 (seed, n, filters, fingerprint, version)을
+    함께 저장한다. 캐시 hit 시 메타가 현재 파라미터와 모두 일치할 때만 반환.
+
+    Args:
+        population: 페르소나 모집단 DataFrame.
+        n: 샘플 크기.
+        seed: 재현성 시드.
+        dataset_fingerprint: 모집단 fingerprint — 변경 시 캐시 재생성.
+        filters: 컬럼별 필터 dict.
+        min_cell_threshold: 희소 셀 경고 임계치.
+        cache_dir: 캐시 루트 디렉터리 (None이면 `_default_cache_dir()`).
+        sampler_version: 샘플러 알고리즘 버전.
+
+    Returns:
+        샘플링된 페르소나 DataFrame (len == n).
+    """
+    cache_root = Path(cache_dir or _default_cache_dir()) / "samples"
+    cache_root.mkdir(parents=True, exist_ok=True)
+    key = cache_key(
+        seed=seed,
+        n=n,
+        filters=filters,
+        dataset_fingerprint=dataset_fingerprint,
+        sampler_version=sampler_version,
+    )
+    path = cache_root / f"{key}.parquet"
+
+    if path.exists():
+        try:
+            tbl = pq.read_table(path)
+            meta = json.loads((tbl.schema.metadata or {}).get(b"kss_meta", b"{}"))
+            if meta.get("dataset_fingerprint") == dataset_fingerprint and meta.get("sampler_version") == sampler_version and meta.get("seed") == seed and meta.get("n") == n:
+                return tbl.to_pandas()
+            logger.warning("Sample cache rejected (metadata mismatch): %s", path)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Sample cache unreadable, regenerating: %s", exc)
+
+    sample = sample_personas(
+        population,
+        n=n,
+        seed=seed,
+        filters=filters,
+        min_cell_threshold=min_cell_threshold,
+    )
+    table = pa.Table.from_pandas(sample, preserve_index=False)
+    meta = {
+        "seed": seed,
+        "n": n,
+        "filters": filters or {},
+        "dataset_fingerprint": dataset_fingerprint,
+        "sampler_version": sampler_version,
+    }
+    table = table.replace_schema_metadata(
+        {
+            b"kss_meta": json.dumps(meta, ensure_ascii=False).encode("utf-8"),
+        }
+    )
+    pq.write_table(table, path)
+    return sample
