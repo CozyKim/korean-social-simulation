@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pandas as pd
+import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -71,3 +73,47 @@ async def test_simulate_one_returns_validated_reaction():
     assert result["stance"] == "positive"
     assert result["intensity"] == 4
     assert result["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_simulate_runs_for_each_persona():
+    canned = {
+        "stance": "neutral",
+        "intensity": 3,
+        "action_intent": "ignore",
+        "key_drivers": ["관심 없음"],
+        "concerns": [],
+        "quote": "별 생각 없네요",
+    }
+    llm = FakeChat(canned=canned)
+    Reaction = build_reaction_model()
+    sample = pd.DataFrame(
+        [
+            {
+                "uuid": f"u{i}",
+                "sex": "남",
+                "age": 30,
+                "province": "서울",
+                "district": "강남",
+                "occupation": "x",
+                "education_level": "x",
+                "bachelors_field": "x",
+                "marital_status": "x",
+                "military_status": "x",
+                "family_type": "x",
+                "housing_type": "x",
+                "country": "한국",
+                "persona": f"p{i}",
+            }
+            for i in range(5)
+        ]
+    )
+    scenario = Scenario(title="t", stimulus="...")
+
+    from korean_social_simulation.simulate import _run_async
+
+    results = await _run_async(sample, scenario, llm, Reaction, concurrency=2)
+
+    assert len(results) == 5
+    assert {r["uuid"] for r in results} == {f"u{i}" for i in range(5)}
+    assert all(r["stance"] == "neutral" for r in results)

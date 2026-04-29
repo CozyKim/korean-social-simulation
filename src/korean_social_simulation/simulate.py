@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Mapping
 from typing import Any
 
+import pandas as pd
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ValidationError
@@ -97,3 +99,37 @@ async def simulate_one(
     if reaction is not None:
         out.update(reaction.model_dump())
     return out
+
+
+async def _run_async(
+    sample: pd.DataFrame,
+    scenario: Scenario,
+    llm: BaseChatModel,
+    reaction_model: type[BaseModel],
+    *,
+    concurrency: int,
+) -> list[dict[str, Any]]:
+    """N개 페르소나에 대해 시뮬을 병렬 실행하고 결과 list 반환.
+
+    ``asyncio.Semaphore`` 로 동시 실행 LLM 호출 수를 제한하고,
+    ``asyncio.gather`` 로 모든 페르소나의 결과를 한 번에 모은다.
+
+    Args:
+        sample: 페르소나 행을 담은 DataFrame.
+        scenario: 입력 시나리오.
+        llm: structured output 지원 LangChain chat model.
+        reaction_model: ``build_reaction_model`` 로 생성한 Pydantic 스키마.
+        concurrency: 최대 동시 LLM 호출 수.
+
+    Returns:
+        ``simulate_one`` 결과 dict의 리스트 (입력 순서 보존).
+    """
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _one(persona: Mapping[str, Any]) -> dict[str, Any]:
+        async with sem:
+            return await simulate_one(persona, scenario, llm, reaction_model)
+
+    rows = sample.to_dict(orient="records")
+    coros = [_one(row) for row in rows]
+    return await asyncio.gather(*coros)
