@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
+
+ProgressCallback = Callable[[dict[str, Any]], None]
 
 import pandas as pd
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -115,6 +117,7 @@ async def _run_async(
     reaction_model: type[BaseModel],
     *,
     concurrency: int,
+    on_progress: ProgressCallback | None = None,
 ) -> list[dict[str, Any]]:
     """N개 페르소나에 대해 시뮬을 병렬 실행하고 결과 list 반환.
 
@@ -127,6 +130,8 @@ async def _run_async(
         llm: structured output 지원 LangChain chat model.
         reaction_model: ``build_reaction_model`` 로 생성한 Pydantic 스키마.
         concurrency: 최대 동시 LLM 호출 수.
+        on_progress: 페르소나 1건이 끝날 때마다 결과 dict를 받는 콜백
+            (완료 순서대로 호출). 콜백 예외는 잡아서 로깅만 하고 계속 진행.
 
     Returns:
         ``simulate_one`` 결과 dict의 리스트 (입력 순서 보존).
@@ -135,7 +140,13 @@ async def _run_async(
 
     async def _one(persona: Mapping[str, Any]) -> dict[str, Any]:
         async with sem:
-            return await simulate_one(persona, scenario, llm, reaction_model)
+            row = await simulate_one(persona, scenario, llm, reaction_model)
+        if on_progress is not None:
+            try:
+                on_progress(row)
+            except Exception:  # noqa: BLE001
+                logger.exception("on_progress callback raised; continuing")
+        return row
 
     rows = sample.to_dict(orient="records")
     coros = [_one(row) for row in rows]
@@ -154,11 +165,16 @@ async def asimulate(
     min_cell_threshold: int = 5,
     concurrency: int | None = None,
     runs_root: Path | str = "runs",
+    on_progress: ProgressCallback | None = None,
 ) -> Run:
     """end-to-end 시뮬레이션 1회 실행 → Run 반환 (async).
 
     노트북·Streamlit·FastAPI 등 이미 이벤트 루프가 떠 있는 환경에서는 이
     async 진입점을 ``await`` 한다. 동기 컨텍스트에서는 :func:`simulate` 를 사용.
+
+    Args:
+        on_progress: 페르소나 1건이 끝날 때마다 결과 dict를 받는 콜백.
+            진행률 표시용. (다른 인자는 :func:`simulate` 와 동일)
 
     Raises:
         RuntimeError: 모든 페르소나의 LLM 호출이 실패해 결과를 만들 수 없을 때.
@@ -183,7 +199,12 @@ async def asimulate(
     conc = concurrency or DEFAULT_CONCURRENCY.get(model, 8)
 
     rows = await _run_async(
-        sample, scenario, llm, reaction_model, concurrency=conc
+        sample,
+        scenario,
+        llm,
+        reaction_model,
+        concurrency=conc,
+        on_progress=on_progress,
     )
     df = pd.DataFrame(rows)
     df["model"] = model
@@ -229,6 +250,7 @@ def simulate(
     min_cell_threshold: int = 5,
     concurrency: int | None = None,
     runs_root: Path | str = "runs",
+    on_progress: ProgressCallback | None = None,
 ) -> Run:
     """동기 wrapper — 실행 중인 이벤트 루프가 있으면 명확히 안내하며 실패한다.
 
@@ -246,6 +268,8 @@ def simulate(
         min_cell_threshold: 희소 셀 경고 기준 (0이면 비활성).
         concurrency: 동시 LLM 호출 수.
         runs_root: 산출물 루트 디렉터리.
+        on_progress: 페르소나 1건이 끝날 때마다 결과 dict를 받는 콜백
+            (완료 순서대로). 진행률 UI 등에 활용.
 
     Returns:
         ``Run`` 인스턴스.
@@ -276,6 +300,7 @@ def simulate(
             min_cell_threshold=min_cell_threshold,
             concurrency=concurrency,
             runs_root=runs_root,
+            on_progress=on_progress,
         )
     )
 
