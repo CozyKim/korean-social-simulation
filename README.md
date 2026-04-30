@@ -56,11 +56,18 @@ uv run kss run \
 
 ### 4) 대시보드
 
+기존 run 결과를 보거나, 시나리오를 골라 그 자리에서 시뮬레이션을 실행할 수 있습니다.
+
 ```bash
+# Result viewer — 기존 run 결과 탐색
 uv run kss dashboard runs/<run-id>
+
+# Run launcher — 인자 없이 실행하면 시나리오를 고르고 그 자리에서 시뮬 실행
+uv run kss dashboard
 ```
 
-Overview / Segment / Quote / Extras 탭에서 stance 분포, 세그먼트별 차트, 대표 인용문, 사용자 정의 필드 분포까지 둘러볼 수 있습니다.
+- **Result viewer**: Overview / Segment / Quote / Extras 탭에서 stance 분포, 세그먼트별 차트, 대표 인용문, 사용자 정의 필드 분포까지 둘러볼 수 있습니다. 헤더의 `← Launcher` 버튼으로 launcher 모드로 돌아갈 수 있습니다.
+- **Run launcher**: `scenarios/` 디렉터리의 YAML을 자동 스캔해 시나리오를 선택하고, 모델·n(상한 1000)·seed·동시성·`runs` 루트를 입력해 `▶ Run simulation` 버튼으로 실행합니다. 완료되면 그 자리에서 결과 뷰로 전환됩니다. 비용 가드로 `n ≥ 200` 일 때 경고를 띄웁니다.
 
 ---
 
@@ -184,7 +191,7 @@ uv run kss --help
 | `kss run --scenario PATH [...]` | 시나리오 YAML로 시뮬 실행 + `report.md` 생성 |
 | `kss list [--limit N]` | 최근 run 디렉터리 목록 |
 | `kss inspect runs/<id>` | run의 메타·stance 분포 출력 |
-| `kss dashboard runs/<id>` | Streamlit 대시보드 실행 (extras `dashboard` 필요) |
+| `kss dashboard [runs/<id>]` | Streamlit 대시보드 실행 (extras `dashboard` 필요). 인자 생략 시 시나리오를 고르고 그 자리에서 시뮬을 실행하는 launcher 모드 |
 
 ---
 

@@ -33,9 +33,7 @@ def run_cmd(
     """시나리오 YAML을 받아 시뮬을 실행하고 report.md 까지 생성."""
     data = yaml.safe_load(scenario.read_text(encoding="utf-8"))
     scen = Scenario(**data)
-    run = simulate(
-        scenario=scen, n=n, model=model, seed=seed, runs_root=runs_root
-    )
+    run = simulate(scenario=scen, n=n, model=model, seed=seed, runs_root=runs_root)
     md = run.report(insights_model=insights_model)
     typer.echo(f"✅ Run saved to: {run.path}")
     typer.echo(f"📄 Report: {md}")
@@ -64,34 +62,38 @@ def inspect_cmd(run_path: Path) -> None:
     """run의 메타와 통계를 출력."""
     run = Run.load(run_path)
     typer.echo(f"Title: {run.scenario.title}")
-    typer.echo(
-        f"Model: {run.meta.get('model')}, n={run.meta.get('n')}, "
-        f"seed={run.meta.get('seed')}"
-    )
+    typer.echo(f"Model: {run.meta.get('model')}, n={run.meta.get('n')}, seed={run.meta.get('seed')}")
     typer.echo("Stance distribution:")
     typer.echo(run.df["stance"].value_counts(normalize=True).round(3).to_string())
 
 
 @app.command("dashboard")
-def dashboard_cmd(run_path: Path) -> None:
-    """Streamlit 대시보드 실행 (extras ``dashboard`` 필요)."""
+def dashboard_cmd(
+    run_path: Path = typer.Argument(
+        None,
+        help="기존 run 디렉터리. 생략하면 launcher 모드로 진입.",
+    ),
+) -> None:
+    """Streamlit 대시보드 실행 (extras ``dashboard`` 필요).
+
+    인자 없이 실행하면 시나리오를 골라 그 자리에서 시뮬레이션을 시작할 수 있는
+    launcher 모드로 진입한다.
+    """
     import subprocess
     import sys
 
     from korean_social_simulation import dashboard as _dash  # noqa: F401
 
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "streamlit",
-            "run",
-            str(Path(_dash.__file__)),
-            "--",
-            str(run_path),
-        ],
-        check=True,
-    )
+    cmd = [
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
+        str(Path(_dash.__file__)),
+    ]
+    if run_path is not None:
+        cmd += ["--", str(run_path)]
+    subprocess.run(cmd, check=True)
 
 
 if __name__ == "__main__":
