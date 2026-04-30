@@ -80,3 +80,10 @@ line-ending = "auto"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = ["live: requires HF network access"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.13"
+include = ["src", "tests"]
+exclude = [".venv", "**/__pycache__", "build", "dist"]
