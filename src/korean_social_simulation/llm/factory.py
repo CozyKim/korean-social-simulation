@@ -33,7 +33,8 @@ def _vllm(model_id: str) -> Callable[[], BaseChatModel]:
 _PRESETS: dict[str, Callable[[], BaseChatModel]] = {
     "gpt-5.5": _codex("gpt-5.5"),
     "gpt-5.4": _codex("gpt-5.4"),
-    "gpt-5.4-nano": _codex("gpt-5.4"),
+    "gpt-5.4-nano": _codex("gpt-5.4-nano"),
+    "gpt-5.4-mini": _codex("gpt-5.4-mini"),
     "vllm-qwen": _vllm("Qwen2.5-72B-Instruct"),
     "vllm-exaone": _vllm("LGAI-EXAONE/EXAONE-3.5-32B-Instruct"),
 }
