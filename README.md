@@ -250,7 +250,18 @@ uv run ruff check . && uv run ruff format --check .
 
 ---
 
-## 라이선스 / 크레딧
+## 라이선스
+
+이 프로젝트의 **소스 코드는 [MIT License](LICENSE)** 하에 배포됩니다.
+
+### 데이터 출처 (Attribution)
+
+이 프로젝트는 NVIDIA Corporation의 [`nvidia/Nemotron-Personas-Korea`](https://huggingface.co/datasets/nvidia/Nemotron-Personas-Korea) 데이터셋을 사용하며, 해당 데이터셋은 [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/) 라이선스를 따릅니다.
+
+- 데이터셋 자체는 본 저장소에 포함·재배포되지 않으며, 런타임에 Hugging Face Hub에서 직접 로드합니다.
+- 본 프로젝트는 데이터를 필터링·인구비례 샘플링해 사용할 뿐 원본 레코드를 수정하지 않습니다.
+- 샘플링된 페르소나에 대한 LLM 반응 결과(`reactions.parquet` 등)는 데이터셋의 derivative work에 해당할 수 있으므로, 외부에 공개·공유할 때는 동일하게 NVIDIA / Nemotron-Personas-Korea 출처를 표기해 주세요.
+
+### 크레딧
 
 - Codex OAuth 어댑터는 MIT-licensed [`langchain-codex-oauth`](https://github.com/AnthonyTlei/langchain-codex-oauth) 프로젝트를 참고한 in-tree 포팅입니다.
-- 페르소나 데이터셋: NVIDIA — `nvidia/Nemotron-Personas-Korea` (해당 라이선스 준수).

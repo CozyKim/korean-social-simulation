@@ -7,6 +7,9 @@ name = "korean-social-simulation"
 version = "0.0.1"
 description = "다양한 한국 페르소나를 기반으로 특정 현상에 대한 시뮬레이션"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "jaehyun" }]
 requires-python = ">=3.13"
 dependencies = [
     "datasets>=4.8.5",
