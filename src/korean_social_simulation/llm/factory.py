@@ -22,7 +22,7 @@ def _vllm(model_id: str) -> Callable[[], BaseChatModel]:
     def _build() -> BaseChatModel:
         return ChatOpenAI(
             base_url=os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1"),
-            api_key=os.environ.get("VLLM_API_KEY", "EMPTY"),
+            api_key=lambda: os.environ.get("VLLM_API_KEY", "EMPTY"),
             model=model_id,
             temperature=0.7,
         )
@@ -33,6 +33,7 @@ def _vllm(model_id: str) -> Callable[[], BaseChatModel]:
 _PRESETS: dict[str, Callable[[], BaseChatModel]] = {
     "gpt-5.5": _codex("gpt-5.5"),
     "gpt-5.4": _codex("gpt-5.4"),
+    "gpt-5.4-nano": _codex("gpt-5.4"),
     "vllm-qwen": _vllm("Qwen2.5-72B-Instruct"),
     "vllm-exaone": _vllm("LGAI-EXAONE/EXAONE-3.5-32B-Instruct"),
 }
@@ -40,6 +41,7 @@ _PRESETS: dict[str, Callable[[], BaseChatModel]] = {
 DEFAULT_CONCURRENCY: dict[str, int] = {
     "gpt-5.5": 2,
     "gpt-5.4": 2,
+    "gpt-5.4-nano": 2,
     "vllm-qwen": 16,
     "vllm-exaone": 16,
 }
