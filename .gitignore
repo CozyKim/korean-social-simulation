@@ -80,6 +80,7 @@ checkpoints/
 
 # 시뮬레이션 산출물 (runs)
 runs/
+scenarios/
 
 # 샘플 캐시
 .cache/
