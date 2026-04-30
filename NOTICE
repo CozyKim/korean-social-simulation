@@ -1,0 +1,25 @@
+Korean Social Simulation
+Copyright 2026 jaehyun
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+------------------------------------------------------------------------------
+Third-party attributions
+------------------------------------------------------------------------------
+
+This product uses the "Nemotron-Personas-Korea" dataset by NVIDIA Corporation,
+licensed under the Creative Commons Attribution 4.0 International License
+(CC BY 4.0). The dataset itself is not redistributed in this repository; it is
+loaded at runtime from the Hugging Face Hub.
+
+  Source: https://huggingface.co/datasets/nvidia/Nemotron-Personas-Korea
+  License: https://creativecommons.org/licenses/by/4.0/
+
+The Codex OAuth adapter under src/korean_social_simulation/llm/codex_oauth/ is
+an in-tree port inspired by the MIT-licensed "langchain-codex-oauth" project.
+
+  Source: https://github.com/AnthonyTlei/langchain-codex-oauth

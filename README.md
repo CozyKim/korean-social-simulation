@@ -252,7 +252,7 @@ uv run ruff check . && uv run ruff format --check .
 
 ## 라이선스
 
-이 프로젝트의 **소스 코드는 [MIT License](LICENSE)** 하에 배포됩니다.
+이 프로젝트의 **소스 코드는 [Apache License 2.0](LICENSE)** 하에 배포됩니다. 재배포 시 [NOTICE](NOTICE) 파일을 함께 포함해 주세요.
 
 ### 데이터 출처 (Attribution)
 
