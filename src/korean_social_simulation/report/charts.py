@@ -11,8 +11,30 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
+from matplotlib import font_manager  # noqa: E402
 
 from korean_social_simulation.data.sampler import age_band  # noqa: E402
+
+
+def _set_korean_font() -> None:
+    """matplotlib에 한글 글리프를 가진 폰트를 우선 적용."""
+    candidates = [
+        "AppleGothic",
+        "Apple SD Gothic Neo",
+        "Noto Sans CJK KR",
+        "Noto Sans KR",
+        "NanumGothic",
+        "Malgun Gothic",
+    ]
+    available = {f.name for f in font_manager.fontManager.ttflist}
+    for name in candidates:
+        if name in available:
+            plt.rcParams["font.family"] = name
+            break
+    plt.rcParams["axes.unicode_minus"] = False
+
+
+_set_korean_font()
 
 _STANCE_ORDER = ["positive", "neutral", "mixed", "negative"]
 _STANCE_COLORS = {
