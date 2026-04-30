@@ -62,6 +62,10 @@ def main() -> None:
 
 def _render_launcher() -> None:
     """시나리오 선택 + 시뮬레이션 실행 폼."""
+    # 위젯 렌더 이전에 클론 페이로드를 폼 session_state로 이관해야
+    # Streamlit이 위젯 키 충돌 경고를 내지 않는다.
+    _consume_pending_clone()
+
     st.title("Korean Social Simulation — Launcher")
     st.caption("시나리오를 골라 시뮬레이션을 실행합니다.")
 
@@ -283,7 +287,11 @@ def _render_run_view(run: Run) -> None:
 
 
 def _select_existing_scenario(scenarios_dir: Path) -> Scenario | None:
-    """``scenarios_dir`` 의 YAML 중 하나를 선택해 Scenario로 로드."""
+    """``scenarios_dir`` 의 YAML 중 하나를 선택해 Scenario로 로드.
+
+    선택된 시나리오를 그대로 실행할 수도 있고, "복제하여 수정" 버튼을 눌러
+    '직접 작성' 폼으로 옮겨 편집·저장할 수도 있다.
+    """
     yaml_files = _discover_scenarios(scenarios_dir)
     if not yaml_files:
         st.warning(f"`{scenarios_dir}` 에서 YAML 파일을 찾을 수 없습니다. 경로를 확인하거나 '직접 작성' 모드로 새 시나리오를 만들 수 있습니다.")
@@ -294,7 +302,47 @@ def _select_existing_scenario(scenarios_dir: Path) -> Scenario | None:
         yaml_files,
         format_func=lambda p: p.name,
     )
-    return _load_scenario(selected)
+    scenario = _load_scenario(selected)
+    if scenario is None:
+        return None
+
+    if st.button(
+        "📋 복제하여 수정",
+        help="이 시나리오를 '직접 작성' 폼으로 복사해 새 시나리오로 편집합니다.",
+        key="clone_existing_scenario",
+    ):
+        st.session_state["_clone_payload"] = {
+            "title": f"{scenario.title} (복제본)",
+            "scenario_type": scenario.scenario_type,
+            "stimulus": scenario.stimulus,
+            "context": scenario.context or "",
+            "question": scenario.question or "",
+            "filename": f"{selected.stem}-copy.yaml",
+        }
+        st.rerun()
+
+    return scenario
+
+
+def _consume_pending_clone() -> None:
+    """직전 rerun에서 적재된 클론 페이로드를 폼 session_state로 이관.
+
+    ``_render_launcher`` 진입 직후, 어떤 위젯도 렌더되기 전에 호출해야 한다.
+    Streamlit은 같은 run 안에서 이미 인스턴스화된 위젯 키의 session_state를
+    수정하면 ``StreamlitAPIException`` 을 던지므로, 페이로드 적재 → ``st.rerun()``
+    → 새 run 최상단에서 소비하는 2단계 패턴이 필요하다.
+    """
+    pending = st.session_state.pop("_clone_payload", None)
+    if pending is None:
+        return
+    st.session_state["scenario_input_mode"] = "직접 작성"
+    st.session_state["new_scenario_title"] = pending["title"]
+    st.session_state["new_scenario_type"] = pending["scenario_type"]
+    st.session_state["new_scenario_stimulus"] = pending["stimulus"]
+    st.session_state["new_scenario_context"] = pending["context"]
+    st.session_state["new_scenario_question"] = pending["question"]
+    st.session_state["new_scenario_save_flag"] = True
+    st.session_state["new_scenario_filename"] = pending["filename"]
 
 
 def _compose_new_scenario(scenarios_dir: Path) -> tuple[Scenario | None, Path | None]:
@@ -339,22 +387,22 @@ def _compose_new_scenario(scenarios_dir: Path) -> tuple[Scenario | None, Path | 
 
     save_to_disk = st.checkbox(
         f"`{scenarios_dir}` 에 YAML로 저장",
-        value=False,
         key="new_scenario_save_flag",
         help="체크하면 Run 버튼 클릭 시 시뮬레이션 직전에 파일로 저장합니다.",
     )
 
     save_path: Path | None = None
     if save_to_disk:
-        default_name = ""
-        if title.strip():
-            try:
-                default_name = f"{Scenario(title=title, stimulus='_').slug()}.yaml"
-            except ValidationError:
-                default_name = ""
+        if "new_scenario_filename" not in st.session_state:
+            default_name = ""
+            if title.strip():
+                try:
+                    default_name = f"{Scenario(title=title, stimulus='_').slug()}.yaml"
+                except ValidationError:
+                    default_name = ""
+            st.session_state["new_scenario_filename"] = default_name
         filename = st.text_input(
             "파일명",
-            value=default_name,
             key="new_scenario_filename",
             help=".yaml 확장자가 없으면 자동으로 붙입니다.",
         )
