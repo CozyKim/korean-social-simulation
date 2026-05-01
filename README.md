@@ -250,12 +250,6 @@ uv run ruff check . && uv run ruff format --check .
 
 ---
 
-## 디자인 문서
-
-- 디자인: [docs/superpowers/specs/2026-04-29-korean-social-simulation-design.md](docs/superpowers/specs/2026-04-29-korean-social-simulation-design.md)
-- 구현 계획: [docs/superpowers/plans/2026-04-29-korean-social-simulation.md](docs/superpowers/plans/2026-04-29-korean-social-simulation.md)
-
----
 
 ## 라이선스
 
