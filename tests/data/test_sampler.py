@@ -285,3 +285,98 @@ def test_cache_key_distinct_filters_distinct_keys():
         dataset_fingerprint="abc123def456",
     )
     assert k1 != k2
+
+
+def test_cache_hit_rejects_mismatched_filters_metadata(
+    fake_population, tmp_cache_dir, caplog
+):
+    """parquet 파일은 그대로지만 메타의 filters가 다르면 캐시 무효."""
+    import pyarrow.parquet as pq
+    import json as _json
+
+    # 1) 정상 캐시 생성
+    sample_personas_cached(
+        fake_population,
+        n=50,
+        seed=42,
+        dataset_fingerprint="fp_test_1234",
+        filters={"province": ["서울특별시"]},
+        cache_dir=tmp_cache_dir,
+    )
+
+    # 2) 같은 cache key 호출인데 filters 본문만 다른 경우를 재현하기 위해
+    #    디스크의 메타를 손상시킨다 (해시 충돌 시뮬레이션).
+    cache_files = list((tmp_cache_dir / "samples").glob("*.parquet"))
+    assert len(cache_files) == 1
+    path = cache_files[0]
+    tbl = pq.read_table(path)
+    bad_meta = _json.loads(tbl.schema.metadata[b"kss_meta"])
+    bad_meta["filters"] = {"province": ["부산광역시"]}  # 변조
+    new_meta = {b"kss_meta": _json.dumps(bad_meta, ensure_ascii=False).encode()}
+    pq.write_table(tbl.replace_schema_metadata(new_meta), path)
+
+    # 3) 같은 인자로 다시 호출하면 메타 mismatch 감지 → 재생성.
+    caplog.set_level(logging.WARNING)
+    result = sample_personas_cached(
+        fake_population,
+        n=50,
+        seed=42,
+        dataset_fingerprint="fp_test_1234",
+        filters={"province": ["서울특별시"]},
+        cache_dir=tmp_cache_dir,
+    )
+    # 결과는 실제 필터 적용 후 결과여야 함 (서울만)
+    assert set(result["province"].unique()) == {"서울특별시"}
+    assert any("metadata mismatch" in rec.message for rec in caplog.records)
+
+
+def test_cache_hit_filters_canonical_form_persists(
+    fake_population, tmp_cache_dir
+):
+    """디스크에 저장되는 filters는 항상 canonical 형태(list 정렬됨)."""
+    import pyarrow.parquet as pq
+    import json as _json
+
+    sample_personas_cached(
+        fake_population,
+        n=30,
+        seed=7,
+        dataset_fingerprint="fp_can_test",
+        filters={"province": ["서울특별시", "경기도", "부산광역시"]},
+        cache_dir=tmp_cache_dir,
+    )
+    path = next((tmp_cache_dir / "samples").glob("*.parquet"))
+    meta = _json.loads(pq.read_table(path).schema.metadata[b"kss_meta"])
+    # 정렬 키는 JSON 직렬화 (`json.dumps(x, ensure_ascii=False)`) — 한글 문자열의
+    # 사전식 순서대로 정렬됨. ㄱ < ㅂ < ㅅ.
+    assert meta["filters"] == {
+        "province": ["경기도", "부산광역시", "서울특별시"]
+    }
+
+
+def test_cache_hit_same_filters_different_order_reuses_cache(
+    fake_population, tmp_cache_dir
+):
+    """순서만 다른 list 입력은 같은 cache 파일을 재사용."""
+    sample_personas_cached(
+        fake_population,
+        n=40,
+        seed=11,
+        dataset_fingerprint="fp_reuse_test",
+        filters={"province": ["서울특별시", "경기도"]},
+        cache_dir=tmp_cache_dir,
+    )
+    files_before = list((tmp_cache_dir / "samples").glob("*.parquet"))
+
+    # 순서만 뒤집어서 호출
+    sample_personas_cached(
+        fake_population,
+        n=40,
+        seed=11,
+        dataset_fingerprint="fp_reuse_test",
+        filters={"province": ["경기도", "서울특별시"]},
+        cache_dir=tmp_cache_dir,
+    )
+    files_after = list((tmp_cache_dir / "samples").glob("*.parquet"))
+    assert len(files_after) == 1, "동일 의미 호출이 새 캐시 파일을 만들지 말아야 함"
+    assert files_before[0] == files_after[0]

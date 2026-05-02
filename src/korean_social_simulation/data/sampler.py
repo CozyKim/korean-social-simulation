@@ -268,10 +268,11 @@ def sample_personas_cached(
     """
     cache_root = Path(cache_dir or _default_cache_dir()) / "samples"
     cache_root.mkdir(parents=True, exist_ok=True)
+    canonical = _canonicalize_filters(filters)
     key = cache_key(
         seed=seed,
         n=n,
-        filters=filters,
+        filters=canonical,
         dataset_fingerprint=dataset_fingerprint,
         sampler_version=sampler_version,
     )
@@ -281,7 +282,13 @@ def sample_personas_cached(
         try:
             tbl = pq.read_table(path)
             meta = json.loads((tbl.schema.metadata or {}).get(b"kss_meta", b"{}"))
-            if meta.get("dataset_fingerprint") == dataset_fingerprint and meta.get("sampler_version") == sampler_version and meta.get("seed") == seed and meta.get("n") == n:
+            if (
+                meta.get("dataset_fingerprint") == dataset_fingerprint
+                and meta.get("sampler_version") == sampler_version
+                and meta.get("seed") == seed
+                and meta.get("n") == n
+                and meta.get("filters") == canonical
+            ):
                 return tbl.to_pandas()
             logger.warning("Sample cache rejected (metadata mismatch): %s", path)
         except Exception as exc:  # noqa: BLE001
@@ -298,7 +305,7 @@ def sample_personas_cached(
     meta = {
         "seed": seed,
         "n": n,
-        "filters": filters or {},
+        "filters": canonical,
         "dataset_fingerprint": dataset_fingerprint,
         "sampler_version": sampler_version,
     }
