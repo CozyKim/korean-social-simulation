@@ -291,8 +291,9 @@ def test_cache_hit_rejects_mismatched_filters_metadata(
     fake_population, tmp_cache_dir, caplog
 ):
     """parquet 파일은 그대로지만 메타의 filters가 다르면 캐시 무효."""
-    import pyarrow.parquet as pq
     import json as _json
+
+    import pyarrow.parquet as pq
 
     # 1) 정상 캐시 생성
     sample_personas_cached(
@@ -334,8 +335,9 @@ def test_cache_hit_filters_canonical_form_persists(
     fake_population, tmp_cache_dir
 ):
     """디스크에 저장되는 filters는 항상 canonical 형태(list 정렬됨)."""
-    import pyarrow.parquet as pq
     import json as _json
+
+    import pyarrow.parquet as pq
 
     sample_personas_cached(
         fake_population,
