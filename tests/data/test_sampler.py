@@ -243,6 +243,18 @@ def test_canonicalize_none_returns_empty():
     assert _canonicalize_filters({}) == {}
 
 
+def test_canonicalize_unorderable_list_does_not_raise():
+    """None / 혼합 타입이 list에 섞여도 정렬은 결정적이고 예외 없이 처리."""
+    # None과 string 혼합: native sort는 TypeError를 던지지만 JSON-key sort는 OK.
+    raw = {"province": ["서울특별시", None, "경기도"]}
+    canonical = _canonicalize_filters(raw)
+    # 정렬은 결정적이어야 하므로 같은 입력은 같은 출력.
+    again = _canonicalize_filters({"province": [None, "경기도", "서울특별시"]})
+    assert canonical == again
+    # 원소 집합은 보존.
+    assert set(map(str, canonical["province"])) == {"서울특별시", "None", "경기도"}
+
+
 def test_cache_key_normalizes_list_order():
     """순서만 다른 list는 같은 cache key를 만든다."""
     k1 = cache_key(

@@ -88,7 +88,9 @@ def _canonicalize_filters(filters: dict[str, Any] | None) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for col, val in filters.items():
         if isinstance(val, (list, tuple)):
-            out[col] = sorted(val)
+            # JSON 직렬화 결과로 정렬 — None / 혼합 타입 등 native 비교 불가능한
+            # 값이 섞여도 결정적이고 안정적으로 정렬된다.
+            out[col] = sorted(val, key=lambda x: json.dumps(x, ensure_ascii=False))
         elif isinstance(val, dict):
             out[col] = {k: val[k] for k in sorted(val.keys())}
         else:
