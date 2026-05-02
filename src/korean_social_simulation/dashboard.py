@@ -23,6 +23,7 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise ImportError("streamlit이 설치되지 않았습니다. `uv sync --extra dashboard`로 설치하세요.") from exc
 
+from korean_social_simulation.data.loader import load_personas
 from korean_social_simulation.llm.factory import (
     DEFAULT_CONCURRENCY,
     available_models,
@@ -38,6 +39,24 @@ N_HARD_CAP = 1000
 INSIGHTS_NONE_LABEL = "(생략)"
 PREVIEW_QUOTE_MAX_CHARS = 140
 PREVIEW_LINES = 6
+
+_FILTER_COLUMNS: tuple[str, ...] = ("uuid", "sex", "age", "province")
+
+
+@st.cache_resource
+def _cached_population_lite() -> tuple[pd.DataFrame, str]:
+    """필터 위젯·카운트 미리보기 전용 경량 모집단 캐시.
+
+    narrative/persona 텍스트 컬럼은 제외해 메모리 사용을 최소화한다.
+    실제 시뮬레이션은 simulate() 내부에서 풀 dataset을 다시 로드하므로,
+    이 캐시는 launcher UI 전용이다.
+
+    Returns:
+        ``(lite_df, dataset_fingerprint)`` — lite_df는 _FILTER_COLUMNS 만 포함.
+    """
+    ds, fp = load_personas()
+    df = ds.select_columns(list(_FILTER_COLUMNS)).to_pandas()
+    return df, fp
 
 
 def main() -> None:
