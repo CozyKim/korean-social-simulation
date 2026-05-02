@@ -142,3 +142,70 @@ def test_cache_miss_on_fingerprint_change(fake_population, tmp_cache_dir, caplog
     # 캐시 파일이 두 개 존재해야 함 (fp1, fp2 각각)
     files = list(Path(tmp_cache_dir / "samples").glob("*.parquet"))
     assert len(files) == 2
+
+
+def test_filter_accepts_list_isin(fake_population):
+    """list 값은 isin 매칭 — 다중 선택."""
+    sample = sample_personas(
+        fake_population,
+        n=200,
+        seed=42,
+        filters={"province": ["서울특별시", "경기도"]},
+    )
+    assert set(sample["province"].unique()) <= {"서울특별시", "경기도"}
+    assert "부산광역시" not in sample["province"].unique()
+
+
+def test_filter_accepts_tuple_same_as_list(fake_population):
+    """tuple도 list와 동일하게 isin으로 처리."""
+    sample = sample_personas(
+        fake_population,
+        n=100,
+        seed=42,
+        filters={"province": ("서울특별시", "경기도")},
+    )
+    assert set(sample["province"].unique()) <= {"서울특별시", "경기도"}
+
+
+def test_filter_accepts_range_dict_min_max(fake_population):
+    """dict {min, max} 는 범위 매칭."""
+    sample = sample_personas(
+        fake_population,
+        n=100,
+        seed=42,
+        filters={"age": {"min": 30, "max": 39}},
+    )
+    assert sample["age"].min() >= 30
+    assert sample["age"].max() <= 39
+
+
+def test_filter_accepts_range_dict_min_only(fake_population):
+    sample = sample_personas(
+        fake_population,
+        n=100,
+        seed=42,
+        filters={"age": {"min": 50}},
+    )
+    assert sample["age"].min() >= 50
+
+
+def test_filter_accepts_range_dict_max_only(fake_population):
+    sample = sample_personas(
+        fake_population,
+        n=100,
+        seed=42,
+        filters={"age": {"max": 39}},
+    )
+    assert sample["age"].max() <= 39
+
+
+def test_filter_combines_list_and_range(fake_population):
+    """다축 조합 — list + dict 동시 적용."""
+    sample = sample_personas(
+        fake_population,
+        n=80,
+        seed=42,
+        filters={"sex": ["남"], "age": {"min": 20, "max": 29}},
+    )
+    assert set(sample["sex"].unique()) == {"남"}
+    assert sample["age"].between(20, 29).all()

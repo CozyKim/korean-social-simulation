@@ -70,8 +70,7 @@ def sample_personas(
     """
     df = population
     if filters:
-        for col, val in filters.items():
-            df = df[df[col] == val]
+        df = _apply_filters(df, filters)
     df = df.reset_index(drop=True)
 
     if len(df) == 0:
@@ -130,6 +129,34 @@ def _allocate_quotas(strata: pd.Series, df: pd.DataFrame, n: int) -> pd.Series:
         raise ValueError(f"Could not allocate exactly n={n} samples (deficit={deficit})")
 
     return quotas
+
+
+def _apply_filters(df: pd.DataFrame, filters: dict[str, Any]) -> pd.DataFrame:
+    """필터 dict의 값 타입에 따라 컬럼별 조건을 적용.
+
+    값 타입별 의미:
+        - list/tuple : isin 매칭 (다중 선택)
+        - dict with min/max : 범위 매칭 (수치형)
+        - 그 외 (scalar) : 등호 매칭 (기존 동작 — 하위호환)
+
+    Args:
+        df: 원본 DataFrame.
+        filters: 컬럼명 → 필터 값 매핑.
+
+    Returns:
+        필터를 적용한 DataFrame view (인덱스 reset 안 함).
+    """
+    for col, val in filters.items():
+        if isinstance(val, (list, tuple)):
+            df = df[df[col].isin(val)]
+        elif isinstance(val, dict) and ("min" in val or "max" in val):
+            if "min" in val:
+                df = df[df[col] >= val["min"]]
+            if "max" in val:
+                df = df[df[col] <= val["max"]]
+        else:
+            df = df[df[col] == val]
+    return df
 
 
 def _warn_sparse_cells(sample: pd.DataFrame, threshold: int) -> None:
