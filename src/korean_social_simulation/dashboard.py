@@ -42,6 +42,19 @@ PREVIEW_LINES = 6
 
 _FILTER_COLUMNS: tuple[str, ...] = ("uuid", "sex", "age", "province")
 
+_AGE_BAND_LABELS: tuple[str, ...] = (
+    "~19", "20s", "30s", "40s", "50s", "60s", "70+",
+)
+_AGE_BAND_RANGES: dict[str, tuple[int, int]] = {
+    "~19": (0, 19),
+    "20s": (20, 29),
+    "30s": (30, 39),
+    "40s": (40, 49),
+    "50s": (50, 59),
+    "60s": (60, 69),
+    "70+": (70, 200),
+}
+
 
 @st.cache_resource
 def _cached_population_lite() -> tuple[pd.DataFrame, str]:
@@ -362,6 +375,79 @@ def _consume_pending_clone() -> None:
     st.session_state["new_scenario_question"] = pending["question"]
     st.session_state["new_scenario_save_flag"] = True
     st.session_state["new_scenario_filename"] = pending["filename"]
+
+
+def _render_filters(population_df: pd.DataFrame) -> dict[str, Any] | None:
+    """`📊 대상 필터링` 섹션을 렌더링하고 simulate에 전달할 filter dict를 반환.
+
+    Returns:
+        모든 축이 "전부" 일 때는 ``None``, 그 외에는 사용자가 좁힌 축만 담은 dict.
+        반환된 dict는 ``simulate(filters=...)`` 또는 ``_apply_filters`` 에 그대로 전달.
+    """
+    sex_options = sorted(population_df["sex"].unique().tolist())
+    province_options = sorted(population_df["province"].unique().tolist())
+    age_min_data = int(population_df["age"].min())
+    age_max_data = int(population_df["age"].max())
+
+    with st.expander("📊 대상 필터링", expanded=True):
+        st.caption("페르소나 모집단을 좁혀 시뮬레이션합니다. 모두 '전부' 선택이면 필터 없음.")
+
+        col_sx, col_pv = st.columns(2)
+        with col_sx:
+            sex_sel = st.multiselect(
+                "성별", sex_options, default=sex_options, key="filter_sex"
+            )
+        with col_pv:
+            province_sel = st.multiselect(
+                "지역", province_options, default=province_options, key="filter_province"
+            )
+
+        age_mode = st.radio(
+            "연령 입력 방식",
+            ["범위", "연령대"],
+            horizontal=True,
+            key="filter_age_mode",
+        )
+
+        if age_mode == "범위":
+            age_range = st.slider(
+                "연령 범위",
+                min_value=age_min_data,
+                max_value=age_max_data,
+                value=(age_min_data, age_max_data),
+                key="filter_age_range",
+            )
+            age_filter_value: Any = None
+            if age_range[0] > age_min_data or age_range[1] < age_max_data:
+                age_filter_value = {"min": age_range[0], "max": age_range[1]}
+        else:
+            bands_sel = st.multiselect(
+                "연령대",
+                list(_AGE_BAND_LABELS),
+                default=list(_AGE_BAND_LABELS),
+                key="filter_age_bands",
+            )
+            age_filter_value = None
+            if set(bands_sel) != set(_AGE_BAND_LABELS):
+                if not bands_sel:
+                    # 0개 선택은 빈 결과 → 빈 list로 표현
+                    age_filter_value = []
+                else:
+                    age_set: set[int] = set()
+                    for b in bands_sel:
+                        lo, hi = _AGE_BAND_RANGES[b]
+                        age_set.update(range(lo, hi + 1))
+                    age_filter_value = sorted(age_set)
+
+    filters: dict[str, Any] = {}
+    if set(sex_sel) != set(sex_options):
+        filters["sex"] = sex_sel
+    if set(province_sel) != set(province_options):
+        filters["province"] = province_sel
+    if age_filter_value is not None:
+        filters["age"] = age_filter_value
+
+    return filters or None
 
 
 def _compose_new_scenario(scenarios_dir: Path) -> tuple[Scenario | None, Path | None]:
