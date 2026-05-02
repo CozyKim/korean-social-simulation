@@ -241,3 +241,35 @@ def test_canonicalize_scalar_pass_through():
 def test_canonicalize_none_returns_empty():
     assert _canonicalize_filters(None) == {}
     assert _canonicalize_filters({}) == {}
+
+
+def test_cache_key_normalizes_list_order():
+    """순서만 다른 list는 같은 cache key를 만든다."""
+    k1 = cache_key(
+        seed=42,
+        n=100,
+        filters={"province": ["서울특별시", "경기도"]},
+        dataset_fingerprint="abc123def456",
+    )
+    k2 = cache_key(
+        seed=42,
+        n=100,
+        filters={"province": ["경기도", "서울특별시"]},
+        dataset_fingerprint="abc123def456",
+    )
+    assert k1 == k2
+
+
+def test_cache_key_distinct_filters_distinct_keys():
+    """다른 의미의 filters는 다른 키."""
+    k1 = cache_key(
+        seed=42, n=100,
+        filters={"province": ["서울특별시"]},
+        dataset_fingerprint="abc123def456",
+    )
+    k2 = cache_key(
+        seed=42, n=100,
+        filters={"province": ["경기도"]},
+        dataset_fingerprint="abc123def456",
+    )
+    assert k1 != k2

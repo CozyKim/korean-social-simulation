@@ -228,7 +228,9 @@ def cache_key(
     Returns:
         `{seed}-{n}-{filters_hash}-{fingerprint12}-{version}` 형태의 결정적 키.
     """
-    filters_str = json.dumps(filters or {}, sort_keys=True, ensure_ascii=False)
+    filters_str = json.dumps(
+        _canonicalize_filters(filters), sort_keys=True, ensure_ascii=False
+    )
     filters_hash = hashlib.sha1(filters_str.encode("utf-8")).hexdigest()[:8]
     return f"{seed}-{n}-{filters_hash}-{dataset_fingerprint[:12]}-{sampler_version}"
 
