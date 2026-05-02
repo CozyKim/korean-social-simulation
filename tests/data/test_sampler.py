@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from korean_social_simulation.data.sampler import (
+    _canonicalize_filters,
     age_band,
     cache_key,
     sample_personas,
@@ -209,3 +210,34 @@ def test_filter_combines_list_and_range(fake_population):
     )
     assert set(sample["sex"].unique()) == {"남"}
     assert sample["age"].between(20, 29).all()
+
+
+def test_canonicalize_sorts_list_values():
+    raw = {"province": ["서울특별시", "경기도", "부산광역시"]}
+    canonical = _canonicalize_filters(raw)
+    assert canonical == {"province": ["경기도", "부산광역시", "서울특별시"]}
+
+
+def test_canonicalize_tuple_becomes_sorted_list():
+    raw = {"sex": ("여", "남")}
+    canonical = _canonicalize_filters(raw)
+    assert canonical == {"sex": ["남", "여"]}
+
+
+def test_canonicalize_dict_value_sorts_keys():
+    raw = {"age": {"max": 39, "min": 20}}
+    canonical = _canonicalize_filters(raw)
+    # dict 키 순서는 json.dumps(sort_keys=True) 가 처리하지만,
+    # 명시적으로도 보장되어야 추후 직접 비교 시 안정.
+    assert list(canonical["age"].keys()) == ["max", "min"]
+
+
+def test_canonicalize_scalar_pass_through():
+    raw = {"sex": "남"}
+    canonical = _canonicalize_filters(raw)
+    assert canonical == {"sex": "남"}
+
+
+def test_canonicalize_none_returns_empty():
+    assert _canonicalize_filters(None) == {}
+    assert _canonicalize_filters({}) == {}

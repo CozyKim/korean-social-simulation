@@ -70,6 +70,32 @@ def _apply_filters(df: pd.DataFrame, filters: dict[str, Any]) -> pd.DataFrame:
     return df
 
 
+def _canonicalize_filters(filters: dict[str, Any] | None) -> dict[str, Any]:
+    """동치 의미를 동일 직렬화에 대응시키는 정규화.
+
+    - list/tuple 값 → 정렬된 list (사용자 입력 순서 무관)
+    - dict 값 → 키 정렬된 dict (예: ``{"max": 39, "min": 20}`` → ``{"min": 20, "max": 39}``)
+    - scalar → 그대로
+
+    Args:
+        filters: 원본 필터 dict (None이면 빈 dict 반환).
+
+    Returns:
+        cache key 계산·메타 저장에 사용할 정규화된 dict.
+    """
+    if not filters:
+        return {}
+    out: dict[str, Any] = {}
+    for col, val in filters.items():
+        if isinstance(val, (list, tuple)):
+            out[col] = sorted(val)
+        elif isinstance(val, dict):
+            out[col] = {k: val[k] for k in sorted(val.keys())}
+        else:
+            out[col] = val
+    return out
+
+
 def sample_personas(
     population: pd.DataFrame,
     *,
