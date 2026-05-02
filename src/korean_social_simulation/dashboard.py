@@ -24,6 +24,7 @@ except ImportError as exc:  # pragma: no cover
     raise ImportError("streamlit이 설치되지 않았습니다. `uv sync --extra dashboard`로 설치하세요.") from exc
 
 from korean_social_simulation.data.loader import load_personas
+from korean_social_simulation.data.sampler import _apply_filters
 from korean_social_simulation.llm.factory import (
     DEFAULT_CONCURRENCY,
     available_models,
@@ -130,6 +131,9 @@ def _render_launcher() -> None:
         if scenario.question:
             st.markdown(f"**질문:** {scenario.question}")
 
+    population_df, _population_fp = _cached_population_lite()
+    filters = _render_filters(population_df)
+
     st.divider()
     st.subheader("실행 설정")
 
@@ -181,7 +185,23 @@ def _render_launcher() -> None:
     if n >= 200:
         st.warning(f"n={n} — 모델 `{model}` 로 호출 비용·시간이 클 수 있습니다.")
 
-    if not st.button("▶ Run simulation", type="primary"):
+    filtered_preview = _apply_filters(population_df, filters or {})
+    n_pass = len(filtered_preview)
+    n_total = len(population_df)
+    can_run = True
+    if n_pass == 0:
+        st.error(f"❌ 필터 통과: 0명 / {n_total:,}명 — 조건을 완화하세요.")
+        can_run = False
+    elif n_pass < n:
+        st.warning(
+            f"⚠️ 필터 통과: {n_pass:,}명 / {n_total:,}명 — n={n} 보다 적습니다. "
+            f"n을 줄이거나 필터를 완화하세요."
+        )
+        can_run = False
+    else:
+        st.success(f"✅ 필터 통과: {n_pass:,}명 / {n_total:,}명 — n={n} 샘플링 가능.")
+
+    if not st.button("▶ Run simulation", type="primary", disabled=not can_run):
         return
 
     if pending_save_path is not None:
@@ -228,6 +248,7 @@ def _render_launcher() -> None:
                 seed=int(seed),
                 concurrency=int(concurrency),
                 runs_root=runs_root,
+                filters=filters,
                 on_progress=_on_progress,
             )
         except Exception as exc:  # noqa: BLE001
