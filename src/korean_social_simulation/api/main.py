@@ -35,8 +35,10 @@ def create_app() -> FastAPI:
     )
 
     from korean_social_simulation.api.routes import auth as auth_routes
+    from korean_social_simulation.api.routes import runs as runs_routes
 
     app.include_router(auth_routes.router)
+    app.include_router(runs_routes.router)
 
     return app
 
