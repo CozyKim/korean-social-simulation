@@ -192,6 +192,7 @@ uv run kss --help
 | `kss list [--limit N]` | 최근 run 디렉터리 목록 |
 | `kss inspect runs/<id>` | run의 메타·stance 분포 출력 |
 | `kss dashboard [runs/<id>]` | Streamlit 대시보드 실행 (extras `dashboard` 필요). 인자 생략 시 시나리오를 고르고 그 자리에서 시뮬을 실행하는 launcher 모드 |
+| `kss serve [--host H --port P]` | FastAPI 백엔드 시작 (extras `api` 필요). 환경변수 `KSS_OWNER_TOKEN`, `KSS_COOKIE_SECRET` 필요 |
 
 ---
 
@@ -252,8 +253,10 @@ uv run ruff check . && uv run ruff format --check .
 
 ## 디자인 문서
 
-- 디자인: [docs/superpowers/specs/2026-04-29-korean-social-simulation-design.md](docs/superpowers/specs/2026-04-29-korean-social-simulation-design.md)
-- 구현 계획: [docs/superpowers/plans/2026-04-29-korean-social-simulation.md](docs/superpowers/plans/2026-04-29-korean-social-simulation.md)
+- 코어 디자인: [docs/superpowers/specs/2026-04-29-korean-social-simulation-design.md](docs/superpowers/specs/2026-04-29-korean-social-simulation-design.md)
+- 코어 구현 계획: [docs/superpowers/plans/2026-04-29-korean-social-simulation.md](docs/superpowers/plans/2026-04-29-korean-social-simulation.md)
+- 프론트엔드 교체 디자인: [docs/superpowers/specs/2026-05-02-frontend-replacement-design.md](docs/superpowers/specs/2026-05-02-frontend-replacement-design.md)
+- 프론트엔드 교체 백엔드 plan: [docs/superpowers/plans/2026-05-04-frontend-replacement-backend.md](docs/superpowers/plans/2026-05-04-frontend-replacement-backend.md)
 
 ---
 
