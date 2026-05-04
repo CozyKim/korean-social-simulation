@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 
 from korean_social_simulation.api.deps import SettingsDep, is_owner_cookie_valid
@@ -162,3 +163,99 @@ async def _replay_stream(run_path: Path, last_event_id: int) -> AsyncIterator[di
         await asyncio.sleep(REPLAY_INTERVAL_S)
     final_eid = len(df) + 1
     yield {"id": str(final_eid), "data": json.dumps({"type": "completed", "event_id": final_eid})}
+
+
+@router.get("/runs/{run_id}/reactions")
+def get_reactions(
+    run_id: str,
+    request: Request,
+    settings: SettingsDep,
+) -> StreamingResponse:
+    """reactions.parquet 파일을 스트림으로 반환한다.
+
+    Args:
+        run_id: 대상 run의 식별자.
+        request: FastAPI Request (쿠키 접근용).
+        settings: 앱 설정 (runs_root).
+
+    Returns:
+        StreamingResponse — application/vnd.apache.parquet MIME 타입.
+
+    Raises:
+        HTTPException(404): run이 없거나 비공개이고 오너가 아닌 경우, 또는 파일 미존재 시.
+    """
+    is_owner = is_owner_cookie_valid(settings, request.cookies.get("kss_owner"))
+    meta = _load_scenario_meta(settings.runs_root, run_id)
+    if meta is None or not _is_visible(meta, is_owner):
+        raise HTTPException(status_code=404)
+    parquet = settings.runs_root / run_id / "reactions.parquet"
+    if not parquet.exists():
+        raise HTTPException(status_code=404)
+
+    def _iter():
+        with parquet.open("rb") as f:
+            while chunk := f.read(64 * 1024):
+                yield chunk
+
+    return StreamingResponse(_iter(), media_type="application/vnd.apache.parquet")
+
+
+@router.get("/runs/{run_id}/charts/{name}")
+def get_chart(
+    run_id: str,
+    name: str,
+    request: Request,
+    settings: SettingsDep,
+) -> StreamingResponse:
+    """차트 이미지(PNG/SVG)를 스트림으로 반환한다.
+
+    Args:
+        run_id: 대상 run의 식별자.
+        name: 차트 파일명 (.png 또는 .svg만 허용).
+        request: FastAPI Request (쿠키 접근용).
+        settings: 앱 설정 (runs_root).
+
+    Returns:
+        StreamingResponse — image/png 또는 image/svg+xml MIME 타입.
+
+    Raises:
+        HTTPException(404): run이 없거나 비공개이고 오너가 아닌 경우, 파일 미존재, 또는 허용되지 않는 확장자.
+    """
+    is_owner = is_owner_cookie_valid(settings, request.cookies.get("kss_owner"))
+    meta = _load_scenario_meta(settings.runs_root, run_id)
+    if meta is None or not _is_visible(meta, is_owner):
+        raise HTTPException(status_code=404)
+    chart = settings.runs_root / run_id / "charts" / name
+    if not chart.exists() or chart.suffix.lower() not in {".png", ".svg"}:
+        raise HTTPException(status_code=404)
+    media = "image/png" if chart.suffix.lower() == ".png" else "image/svg+xml"
+    return StreamingResponse(chart.open("rb"), media_type=media)
+
+
+@router.get("/runs/{run_id}/report")
+def get_report(
+    run_id: str,
+    request: Request,
+    settings: SettingsDep,
+) -> StreamingResponse:
+    """report.md 파일을 스트림으로 반환한다.
+
+    Args:
+        run_id: 대상 run의 식별자.
+        request: FastAPI Request (쿠키 접근용).
+        settings: 앱 설정 (runs_root).
+
+    Returns:
+        StreamingResponse — text/markdown; charset=utf-8 MIME 타입.
+
+    Raises:
+        HTTPException(404): run이 없거나 비공개이고 오너가 아닌 경우, 또는 파일 미존재 시.
+    """
+    is_owner = is_owner_cookie_valid(settings, request.cookies.get("kss_owner"))
+    meta = _load_scenario_meta(settings.runs_root, run_id)
+    if meta is None or not _is_visible(meta, is_owner):
+        raise HTTPException(status_code=404)
+    report = settings.runs_root / run_id / "report.md"
+    if not report.exists():
+        raise HTTPException(status_code=404)
+    return StreamingResponse(report.open("rb"), media_type="text/markdown; charset=utf-8")

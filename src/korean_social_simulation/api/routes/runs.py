@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import uuid
 from typing import Any
 
@@ -233,3 +234,24 @@ async def patch_run(
         except Exception as exc:  # noqa: BLE001
             logger.warning("revalidate hook failed: %s", exc)
     return {"public": body.public}
+
+
+@router.delete(
+    "/runs/{run_id}",
+    status_code=204,
+    dependencies=[Depends(require_owner)],
+)
+async def delete_run(run_id: str, settings: SettingsDep) -> None:
+    """run 디렉터리를 완전히 삭제한다 (오너 전용).
+
+    Args:
+        run_id: 삭제할 run의 ID.
+        settings: 앱 설정 (runs_root).
+
+    Raises:
+        HTTPException: run이 존재하지 않으면 404.
+    """
+    run_path = settings.runs_root / run_id
+    if not run_path.exists():
+        raise HTTPException(status_code=404)
+    shutil.rmtree(run_path)

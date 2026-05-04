@@ -68,3 +68,25 @@ def test_get_public_run_returns_meta(settings_env: Path, client: TestClient) -> 
     r = client.get("/api/runs/pub")
     assert r.status_code == 200
     assert r.json()["title"] == "t-pub"
+
+
+def test_delete_run(settings_env: Path, client: TestClient) -> None:
+    _make_run(settings_env / "runs", "rid")
+    _login(client)
+    r = client.delete("/api/runs/rid")
+    assert r.status_code == 204
+    assert not (settings_env / "runs" / "rid").exists()
+
+
+def test_get_reactions_private_run_anonymous_404(settings_env: Path, client: TestClient) -> None:
+    _make_run(settings_env / "runs", "priv", public=False)
+    r = client.get("/api/runs/priv/reactions")
+    assert r.status_code == 404
+
+
+def test_get_reactions_public_streams_parquet(settings_env: Path, client: TestClient) -> None:
+    _make_run(settings_env / "runs", "pub", public=True)
+    r = client.get("/api/runs/pub/reactions")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/vnd.apache.parquet"
+    assert len(r.content) > 0
