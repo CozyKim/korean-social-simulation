@@ -88,3 +88,38 @@ def test_create_pending_writes_status_running(tmp_path: Path) -> None:
     data = _json.loads((path / "scenario.json").read_text())
     assert data["status"] == "running"
     assert data["meta"]["n"] == 5
+
+
+def test_append_partial_then_finalize(tmp_path: Path) -> None:
+    scenario = Scenario(title="t", stimulus="s")
+    path = Run.create_pending(
+        root=tmp_path,
+        scenario=scenario,
+        meta={"model": "x", "n": 2},
+        run_id="rid",
+    )
+    Run.append_partial(path, {"sex": "female", "stance": "positive", "intensity": 4})
+    Run.append_partial(path, {"sex": "male", "stance": "negative", "intensity": 2})
+    sample = pd.DataFrame([{"sex": "female", "age": 28}, {"sex": "male", "age": 45}])
+    run = Run.finalize_pending(path, sample=sample)
+    assert not (path / "reactions.partial.jsonl").exists()
+    assert (path / "reactions.parquet").exists()
+    assert len(run.df) == 2
+    assert run.df["stance"].tolist() == ["positive", "negative"]
+
+
+def test_finalize_marks_status_completed(tmp_path: Path) -> None:
+    scenario = Scenario(title="t", stimulus="s")
+    path = Run.create_pending(
+        root=tmp_path,
+        scenario=scenario,
+        meta={"model": "x", "n": 1},
+        run_id="rid2",
+    )
+    Run.append_partial(path, {"sex": "female", "stance": "positive"})
+    sample = pd.DataFrame([{"sex": "female", "age": 28}])
+    Run.finalize_pending(path, sample=sample)
+    import json as _json
+
+    data = _json.loads((path / "scenario.json").read_text())
+    assert data["status"] == "completed"

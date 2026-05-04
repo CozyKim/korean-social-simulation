@@ -141,6 +141,70 @@ class Run:
         (path / "reactions.partial.jsonl").write_text("", encoding="utf-8")
         return path
 
+    @staticmethod
+    def append_partial(path: Path, row: dict[str, Any]) -> None:
+        """partial.jsonl에 reaction 1건을 append. 동시 호출은 단일 워커 가정."""
+        partial = Path(path) / "reactions.partial.jsonl"
+        with partial.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    @classmethod
+    def finalize_pending(
+        cls,
+        path: Path,
+        *,
+        sample: pd.DataFrame,
+    ) -> Run:
+        """partial.jsonl을 reactions.parquet으로 변환하고 status=completed로 표시.
+
+        Args:
+            path: ``create_pending`` 으로 만든 run 디렉터리.
+            sample: 사용된 페르소나 메타 — sample.parquet으로 저장.
+
+        Returns:
+            완성된 Run.
+
+        Raises:
+            FileNotFoundError: partial.jsonl이 없을 때 (이미 finalize되었거나
+                create_pending이 호출되지 않은 경우).
+        """
+        path = Path(path)
+        partial = path / "reactions.partial.jsonl"
+        if not partial.exists():
+            raise FileNotFoundError(f"No partial file at {partial}")
+
+        rows = [json.loads(line) for line in partial.read_text(encoding="utf-8").splitlines() if line.strip()]
+        df = pd.DataFrame(rows) if rows else pd.DataFrame()
+        df.to_parquet(path / "reactions.parquet", index=False)
+        sample.to_parquet(path / "sample.parquet", index=False)
+        partial.unlink()
+
+        meta_path = path / "scenario.json"
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+        data["status"] = "completed"
+        data["completed_at"] = datetime.now(UTC).isoformat()
+        meta_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        scenario = Scenario(**data["scenario"])
+        return cls(path=path, scenario=scenario, df=df, meta=data["meta"])
+
+    @classmethod
+    def mark_failed(cls, path: Path, error: str) -> None:
+        """status=failed + error 메시지를 scenario.json에 기록 (partial은 그대로 둠)."""
+        path = Path(path)
+        meta_path = path / "scenario.json"
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+        data["status"] = "failed"
+        data["error"] = error
+        data["failed_at"] = datetime.now(UTC).isoformat()
+        meta_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
     @classmethod
     def load(cls, path: Path) -> Run:
         """기존 run 디렉터리에서 Run을 복원한다."""
