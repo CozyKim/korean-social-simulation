@@ -275,21 +275,21 @@ def test_cache_key_normalizes_list_order():
 def test_cache_key_distinct_filters_distinct_keys():
     """다른 의미의 filters는 다른 키."""
     k1 = cache_key(
-        seed=42, n=100,
+        seed=42,
+        n=100,
         filters={"province": ["서울특별시"]},
         dataset_fingerprint="abc123def456",
     )
     k2 = cache_key(
-        seed=42, n=100,
+        seed=42,
+        n=100,
         filters={"province": ["경기도"]},
         dataset_fingerprint="abc123def456",
     )
     assert k1 != k2
 
 
-def test_cache_hit_rejects_mismatched_filters_metadata(
-    fake_population, tmp_cache_dir, caplog
-):
+def test_cache_hit_rejects_mismatched_filters_metadata(fake_population, tmp_cache_dir, caplog):
     """parquet 파일은 그대로지만 메타의 filters가 다르면 캐시 무효."""
     import json as _json
 
@@ -331,9 +331,7 @@ def test_cache_hit_rejects_mismatched_filters_metadata(
     assert any("metadata mismatch" in rec.message for rec in caplog.records)
 
 
-def test_cache_hit_filters_canonical_form_persists(
-    fake_population, tmp_cache_dir
-):
+def test_cache_hit_filters_canonical_form_persists(fake_population, tmp_cache_dir):
     """디스크에 저장되는 filters는 항상 canonical 형태(list 정렬됨)."""
     import json as _json
 
@@ -351,14 +349,10 @@ def test_cache_hit_filters_canonical_form_persists(
     meta = _json.loads(pq.read_table(path).schema.metadata[b"kss_meta"])
     # 정렬 키는 JSON 직렬화 (`json.dumps(x, ensure_ascii=False)`) — 한글 문자열의
     # 사전식 순서대로 정렬됨. ㄱ < ㅂ < ㅅ.
-    assert meta["filters"] == {
-        "province": ["경기도", "부산광역시", "서울특별시"]
-    }
+    assert meta["filters"] == {"province": ["경기도", "부산광역시", "서울특별시"]}
 
 
-def test_cache_hit_same_filters_different_order_reuses_cache(
-    fake_population, tmp_cache_dir
-):
+def test_cache_hit_same_filters_different_order_reuses_cache(fake_population, tmp_cache_dir):
     """순서만 다른 list 입력은 같은 cache 파일을 재사용."""
     sample_personas_cached(
         fake_population,
