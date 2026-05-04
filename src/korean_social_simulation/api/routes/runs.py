@@ -7,6 +7,7 @@ import logging
 import uuid
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from korean_social_simulation.api.deps import (
@@ -19,10 +20,12 @@ from korean_social_simulation.api.persistence import (
     list_run_dirs,
     load_run_meta,
     to_summary,
+    write_run_meta,
 )
 from korean_social_simulation.api.schemas import (
     CreateRunRequest,
     CreateRunResponse,
+    PatchRunRequest,
 )
 from korean_social_simulation.scenario import Scenario
 from korean_social_simulation.simulate import asimulate
@@ -190,3 +193,43 @@ def get_run(
     summary["scenario"] = meta["scenario"]
     summary["report_url"] = f"/api/runs/{run_id}/report" if (run_path / "report.md").exists() else None
     return summary
+
+
+@router.patch(
+    "/runs/{run_id}",
+    dependencies=[Depends(require_owner)],
+)
+async def patch_run(
+    run_id: str,
+    body: PatchRunRequest,
+    settings: SettingsDep,
+) -> dict:
+    """run의 public 필드를 토글하고 Vercel revalidate hook을 호출한다.
+
+    Args:
+        run_id: 수정할 run의 ID.
+        body: public 값을 담은 요청 바디.
+        settings: 앱 설정 (runs_root, vercel_revalidate_hook_url 등).
+
+    Returns:
+        {"public": bool} 딕셔너리.
+
+    Raises:
+        HTTPException: run이 없으면 404.
+    """
+    run_path = settings.runs_root / run_id
+    meta = load_run_meta(run_path)
+    if meta is None:
+        raise HTTPException(status_code=404)
+    meta["public"] = body.public
+    write_run_meta(run_path, meta)
+    if settings.vercel_revalidate_hook_url:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as h:
+                await h.post(
+                    settings.vercel_revalidate_hook_url,
+                    json={"path": f"/runs/{run_id}"},
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("revalidate hook failed: %s", exc)
+    return {"public": body.public}
