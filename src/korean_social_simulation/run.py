@@ -93,6 +93,55 @@ class Run:
         return cls(path=path, scenario=scenario, df=reactions, meta=meta)
 
     @classmethod
+    def create_pending(
+        cls,
+        *,
+        root: Path,
+        scenario: Scenario,
+        meta: dict[str, Any],
+        run_id: str,
+    ) -> Path:
+        """시뮬 시작 시점에 디렉터리만 미리 만들고 partial.jsonl 빈 파일 둔다.
+
+        FastAPI job manager가 ``POST /api/runs`` 직후에 호출. 시뮬 진행 중에는
+        ``reactions.partial.jsonl`` 에 페르소나별 응답을 1줄씩 append하고,
+        시뮬 종료 시 ``Run.finalize_pending`` 으로 parquet으로 변환한다.
+
+        Args:
+            root: 모든 run을 모아두는 루트.
+            scenario: 입력 시나리오.
+            meta: 재현성·LLM 정보.
+            run_id: 명시적 ID. job manager가 미리 발급한 uuid.
+
+        Returns:
+            생성된 디렉터리 경로.
+
+        Raises:
+            FileExistsError: 같은 run_id 디렉터리가 이미 있을 때.
+        """
+        path = Path(root) / run_id
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.mkdir(exist_ok=False)
+        (path / "charts").mkdir(exist_ok=True)
+        (path / "scenario.json").write_text(
+            json.dumps(
+                {
+                    "scenario": scenario.model_dump(),
+                    "meta": meta,
+                    "run_id": run_id,
+                    "status": "running",
+                    "public": False,
+                    "created_at": datetime.now(UTC).isoformat(),
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        (path / "reactions.partial.jsonl").write_text("", encoding="utf-8")
+        return path
+
+    @classmethod
     def load(cls, path: Path) -> Run:
         """기존 run 디렉터리에서 Run을 복원한다."""
         path = Path(path)
