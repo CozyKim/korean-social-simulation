@@ -280,6 +280,9 @@ def _render_run_view(run: Run) -> None:
     with header_col:
         st.title(run.scenario.title)
         st.caption(f"model={run.meta.get('model')}, n={run.meta.get('n')}, seed={run.meta.get('seed')}")
+        filters_meta = run.meta.get("filters") or {}
+        if filters_meta:
+            st.caption(f"filters: {_format_filters_summary(filters_meta)}")
     with btn_col:
         if st.button("← Launcher"):
             st.session_state.pop("run_path", None)
@@ -469,6 +472,24 @@ def _render_filters(population_df: pd.DataFrame) -> dict[str, Any] | None:
         filters["age"] = age_filter_value
 
     return filters or None
+
+
+def _format_filters_summary(filters: dict[str, Any]) -> str:
+    """run view caption용 필터 요약 문자열.
+
+    예: ``남자 / 서울특별시+경기도 / age 25-34`` — 컬럼별로 ' / ' 로 구분.
+    """
+    parts: list[str] = []
+    for col, val in filters.items():
+        if isinstance(val, list) and val:
+            parts.append("+".join(str(v) for v in val))
+        elif isinstance(val, dict) and ("min" in val or "max" in val):
+            lo = val.get("min", "")
+            hi = val.get("max", "")
+            parts.append(f"{col} {lo}-{hi}")
+        else:
+            parts.append(str(val))
+    return " / ".join(parts) if parts else "(없음)"
 
 
 def _compose_new_scenario(scenarios_dir: Path) -> tuple[Scenario | None, Path | None]:
