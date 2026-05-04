@@ -35,6 +35,7 @@ class Run:
         sample: pd.DataFrame,
         meta: dict[str, Any],
         run_id: str | None = None,
+        allow_existing: bool = False,
     ) -> Run:
         """산출물 디렉터리를 새로 만들고 scenario/reactions/sample을 직렬화한다.
 
@@ -49,24 +50,25 @@ class Run:
             sample: 사용된 샘플 DataFrame (페르소나 메타).
             meta: 재현성·LLM 정보 (model, n, seed, dataset_fingerprint 등).
             run_id: 명시적 ID. 없으면 자동 생성.
+            allow_existing: ``True`` 이면 같은 ``run_id`` 의 디렉터리가 이미 있어도
+                덮어쓰지 않고 그대로 사용해 메타·결과를 재기록한다 (멱등). FastAPI
+                job manager가 시뮬 시작 시점에 미리 디렉터리를 만들어 두고 종료 시
+                같은 ID로 다시 호출할 수 있도록 한다.
 
         Returns:
             새로 생성된 Run.
 
         Raises:
-            FileExistsError: ``run_id`` 디렉터리가 이미 존재할 때.
+            FileExistsError: ``run_id`` 디렉터리가 이미 존재하고 ``allow_existing``
+                이 ``False`` 일 때.
         """
         run_id = run_id or _new_run_id(scenario.slug())
         path = Path(root) / run_id
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            path.mkdir(exist_ok=False)
+            path.mkdir(exist_ok=allow_existing)
         except FileExistsError as exc:
-            raise FileExistsError(
-                f"Run directory already exists: {path}. "
-                "기존 run 보호를 위해 덮어쓰지 않습니다. "
-                "다른 run_id로 다시 시도하세요."
-            ) from exc
+            raise FileExistsError(f"Run directory already exists: {path}. 기존 run 보호를 위해 덮어쓰지 않습니다. 다른 run_id로 다시 시도하세요.") from exc
         try:
             (path / "charts").mkdir(exist_ok=True)
             (path / "scenario.json").write_text(
@@ -85,7 +87,8 @@ class Run:
             reactions.to_parquet(path / "reactions.parquet", index=False)
             sample.to_parquet(path / "sample.parquet", index=False)
         except Exception:
-            shutil.rmtree(path, ignore_errors=True)
+            if not allow_existing:
+                shutil.rmtree(path, ignore_errors=True)
             raise
         return cls(path=path, scenario=scenario, df=reactions, meta=meta)
 
@@ -139,10 +142,7 @@ class Run:
         except RuntimeError:
             pass
         else:
-            raise RuntimeError(
-                "Run.report()는 동기 컨텍스트에서만 호출할 수 있습니다. "
-                "노트북·async 환경에서는 `await run.areport(...)` 를 사용하세요."
-            )
+            raise RuntimeError("Run.report()는 동기 컨텍스트에서만 호출할 수 있습니다. 노트북·async 환경에서는 `await run.areport(...)` 를 사용하세요.")
         return asyncio.run(self.areport(insights_model=insights_model))
 
 
