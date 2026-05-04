@@ -26,6 +26,14 @@ dependencies = [
 
 [project.optional-dependencies]
 dashboard = ["streamlit>=1.57"]
+api = [
+    "fastapi>=0.118",
+    "uvicorn[standard]>=0.32",
+    "sse-starlette>=2.3",
+    "itsdangerous>=2.2",
+    "httpx>=0.28",
+    "python-multipart>=0.0.20",
+]
 
 [project.scripts]
 kss = "korean_social_simulation.cli:app"
