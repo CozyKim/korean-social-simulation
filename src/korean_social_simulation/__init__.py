@@ -3,12 +3,13 @@
 from korean_social_simulation._version import DATASET_REVISION, SAMPLER_VERSION
 from korean_social_simulation.run import Run
 from korean_social_simulation.scenario import Scenario
-from korean_social_simulation.simulate import simulate
+from korean_social_simulation.simulate import asimulate, simulate
 
 __all__ = [
     "DATASET_REVISION",
     "Run",
     "SAMPLER_VERSION",
     "Scenario",
+    "asimulate",
     "simulate",
 ]

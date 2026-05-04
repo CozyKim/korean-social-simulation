@@ -1,7 +1,9 @@
 """end-to-end 시뮬: tiny 모집단 + fake LLM → run 디렉터리 검증."""
 
+import contextlib
 import json
 from unittest.mock import patch
+from unittest.mock import patch as _patch
 
 import pandas as pd
 import pytest
@@ -22,9 +24,7 @@ class _FakeChatStructured(BaseChatModel):
         return "fake-e2e"
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        return ChatResult(
-            generations=[ChatGeneration(message=AIMessage(content="요약"))]
-        )
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content="요약"))])
 
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
         return self._generate(messages, stop, run_manager, **kwargs)
@@ -93,6 +93,33 @@ class _FakeDataset:
 
     def to_pandas(self) -> pd.DataFrame:
         return self._df
+
+
+@contextlib.contextmanager
+def _patch_llm_and_data(monkeypatch, *, n: int = 500):
+    """test_e2e의 LLM/데이터셋 mock + KSS_CACHE_DIR 격리를 한 번에 적용한다.
+
+    pytest-asyncio 컨텍스트에서도 사용 가능하도록 contextmanager로 export.
+    Args:
+        n: tiny 모집단 크기 (기본 500). 호출자의 `n`(샘플 수)보다 충분히 크게 줘야
+            stratified 샘플링이 성공한다.
+    """
+    import tempfile
+
+    tmp_cache = tempfile.mkdtemp(prefix="kss-test-cache-")
+    monkeypatch.setenv("KSS_CACHE_DIR", tmp_cache)
+    fake_pop = _tiny_population(n)
+    with (
+        _patch(
+            "korean_social_simulation.simulate.load_personas",
+            return_value=(_FakeDataset(fake_pop), "fp_test"),
+        ),
+        _patch(
+            "korean_social_simulation.simulate.get_llm",
+            return_value=_FakeChatStructured(),
+        ),
+    ):
+        yield
 
 
 def test_e2e_simulation_creates_run_and_report(tmp_path, monkeypatch):
