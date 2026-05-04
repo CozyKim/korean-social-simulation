@@ -7,13 +7,19 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from korean_social_simulation.api.deps import (
     SettingsDep,
+    is_owner_cookie_valid,
     require_owner,
 )
 from korean_social_simulation.api.job_manager import JobManager
+from korean_social_simulation.api.persistence import (
+    list_run_dirs,
+    load_run_meta,
+    to_summary,
+)
 from korean_social_simulation.api.schemas import (
     CreateRunRequest,
     CreateRunResponse,
@@ -126,3 +132,61 @@ async def create_run(
 
     asyncio.create_task(_runner())
     return CreateRunResponse(run_id=run_id, status="starting")
+
+
+@router.get("/runs")
+def list_runs(
+    request: Request,
+    settings: SettingsDep,
+) -> list[dict]:
+    """시뮬레이션 목록을 반환한다. 익명 사용자는 public=True 항목만, 오너는 전체.
+
+    Args:
+        request: FastAPI Request (쿠키 접근용).
+        settings: 앱 설정 (runs_root).
+
+    Returns:
+        run 요약 딕셔너리 목록.
+    """
+    is_owner = is_owner_cookie_valid(settings, request.cookies.get("kss_owner"))
+    out: list[dict] = []
+    for run_path in list_run_dirs(settings.runs_root):
+        meta = load_run_meta(run_path)
+        if meta is None:
+            continue
+        if not is_owner and not meta.get("public", False):
+            continue
+        out.append(to_summary(meta))
+    return out
+
+
+@router.get("/runs/{run_id}")
+def get_run(
+    run_id: str,
+    request: Request,
+    settings: SettingsDep,
+) -> dict:
+    """특정 run의 상세 정보를 반환한다. 비공개 run을 익명 요청이 조회하면 404.
+
+    Args:
+        run_id: 조회할 run의 ID.
+        request: FastAPI Request (쿠키 접근용).
+        settings: 앱 설정 (runs_root).
+
+    Returns:
+        run 요약 + scenario 원문 + report_url 딕셔너리.
+
+    Raises:
+        HTTPException: run이 없거나 익명 사용자가 비공개 run에 접근 시 404.
+    """
+    is_owner = is_owner_cookie_valid(settings, request.cookies.get("kss_owner"))
+    run_path = settings.runs_root / run_id
+    meta = load_run_meta(run_path)
+    if meta is None:
+        raise HTTPException(status_code=404)
+    if not is_owner and not meta.get("public", False):
+        raise HTTPException(status_code=404)
+    summary = to_summary(meta)
+    summary["scenario"] = meta["scenario"]
+    summary["report_url"] = f"/api/runs/{run_id}/report" if (run_path / "report.md").exists() else None
+    return summary
