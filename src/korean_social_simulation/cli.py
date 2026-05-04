@@ -96,5 +96,30 @@ def dashboard_cmd(
     subprocess.run(cmd, check=True)
 
 
+@app.command("serve")
+def serve_cmd(
+    host: str = typer.Option("127.0.0.1", "--host", help="bind 주소"),
+    port: int = typer.Option(8000, "--port", help="bind 포트"),
+) -> None:
+    """FastAPI 백엔드를 uvicorn으로 띄운다.
+
+    환경변수 ``KSS_OWNER_TOKEN``, ``KSS_COOKIE_SECRET`` 가 필요하다.
+    extras ``api`` 가 설치되어 있어야 한다 (``uv sync --extra api``).
+    """
+    try:
+        import uvicorn
+    except ImportError as exc:
+        typer.echo("uvicorn이 설치되지 않았습니다. `uv sync --extra api`로 설치하세요.", err=True)
+        raise typer.Exit(code=1) from exc
+
+    uvicorn.run(
+        "korean_social_simulation.api.main:app",
+        host=host,
+        port=port,
+        workers=1,
+        log_level="info",
+    )
+
+
 if __name__ == "__main__":
     app()
