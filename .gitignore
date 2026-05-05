@@ -85,4 +85,10 @@ scenarios/
 # 샘플 캐시
 .cache/
 
+# superpowers brainstorm artifacts
+.superpowers/
+
+# git worktrees (frontend 등 isolated 작업)
+.worktrees/
+
 eda.ipynb
