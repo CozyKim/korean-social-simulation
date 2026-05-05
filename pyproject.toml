@@ -34,6 +34,10 @@ api = [
     "httpx>=0.28",
     "python-multipart>=0.0.20",
 ]
+image = [
+    "openai>=1.51",
+    "pillow>=10.4",
+]
 
 [project.scripts]
 kss = "korean_social_simulation.cli:app"
