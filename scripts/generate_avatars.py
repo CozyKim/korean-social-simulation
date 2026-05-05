@@ -1,9 +1,12 @@
 """238장 한국 페르소나 strata 아바타 생성 (멱등).
 
 Usage:
-    uv run --extra image python scripts/generate_avatars.py
-    uv run --extra image python scripts/generate_avatars.py --force
-    uv run --extra image python scripts/generate_avatars.py --limit 5
+    uv run --extra image python -m scripts.generate_avatars
+    uv run --extra image python -m scripts.generate_avatars --force
+    uv run --extra image python -m scripts.generate_avatars --limit 5
+
+``python scripts/generate_avatars.py`` 처럼 직접 실행하면 ``sys.path[0]`` 가
+``scripts/`` 가 되어 ``scripts._image_backend`` import 가 실패한다. 항상 ``-m`` 으로 호출.
 """
 
 from __future__ import annotations

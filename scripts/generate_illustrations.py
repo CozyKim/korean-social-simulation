@@ -1,8 +1,11 @@
 """랜딩 hero / OG / favicon / 카테고리 아이콘 일괄 생성 (멱등).
 
 Usage:
-    uv run --extra image python scripts/generate_illustrations.py
-    uv run --extra image python scripts/generate_illustrations.py --force
+    uv run --extra image python -m scripts.generate_illustrations
+    uv run --extra image python -m scripts.generate_illustrations --force
+
+``python scripts/generate_illustrations.py`` 처럼 직접 실행하면 ``sys.path[0]`` 가
+``scripts/`` 가 되어 ``scripts._image_backend`` import 가 실패한다. 항상 ``-m`` 으로 호출.
 """
 
 from __future__ import annotations
