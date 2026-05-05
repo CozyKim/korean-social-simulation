@@ -9,12 +9,25 @@ from __future__ import annotations
 import base64
 import os
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
+
+ImageSize = Literal[
+    "auto",
+    "1024x1024",
+    "1536x1024",
+    "1024x1536",
+    "256x256",
+    "512x512",
+    "1792x1024",
+    "1024x1792",
+]
+ImageQuality = Literal["standard", "hd", "low", "medium", "high", "auto"]
 
 
 class ImageBackend(Protocol):
-    def generate(self, *, prompt: str, size: str = "1024x1024") -> bytes:
+    def generate(self, *, prompt: str, size: ImageSize = "1024x1024") -> bytes:
         """프롬프트 → webp(or png) bytes."""
+        ...
 
 
 @dataclass
@@ -22,9 +35,9 @@ class OpenAIImageBackend:
     """OpenAI ``gpt-image-1`` 호출. ``OPENAI_API_KEY`` 필수."""
 
     model: str = "gpt-image-1"
-    quality: str = "low"
+    quality: ImageQuality = "low"
 
-    def generate(self, *, prompt: str, size: str = "1024x1024") -> bytes:
+    def generate(self, *, prompt: str, size: ImageSize = "1024x1024") -> bytes:
         from openai import OpenAI
 
         api_key = os.environ.get("OPENAI_API_KEY")
@@ -39,6 +52,8 @@ class OpenAIImageBackend:
             quality=self.quality,
             n=1,
         )
+        if not result.data:
+            raise RuntimeError("OpenAI 응답에 data 가 없습니다.")
         b64 = result.data[0].b64_json
         if not b64:
             raise RuntimeError("OpenAI 응답에 b64_json 가 없습니다.")

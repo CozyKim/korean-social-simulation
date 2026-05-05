@@ -97,5 +97,5 @@ markers = ["live: requires HF network access"]
 venvPath = "."
 venv = ".venv"
 pythonVersion = "3.13"
-include = ["src", "tests"]
+include = ["src", "tests", "scripts"]
 exclude = [".venv", "**/__pycache__", "build", "dist"]
