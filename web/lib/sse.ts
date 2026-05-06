@@ -25,9 +25,14 @@ export function useSSE(url: string, options: UseSseOptions = {}) {
   const connect = useCallback(() => {
     if (cancelledRef.current || terminatedRef.current) return;
     const sep = url.includes("?") ? "&" : "?";
-    const full = lastIdRef.current
+    const withId = lastIdRef.current
       ? `${url}${sep}last_event_id=${encodeURIComponent(lastIdRef.current)}`
       : url;
+    // BASE 가 빈 문자열이면 raw path 그대로 (dev: Next rewrites 사용).
+    // BASE 가 설정된 경우 cross-origin 절대 URL — apiFetch 와 동일 패턴.
+    // 그렇지 않으면 SSE 가 Next origin 에 붙어 쿠키 미포함 → 권한 거부.
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+    const full = `${base}${withId}`;
     const es = new EventSource(full, { withCredentials: true });
     sourceRef.current = es;
     es.onopen = () => {

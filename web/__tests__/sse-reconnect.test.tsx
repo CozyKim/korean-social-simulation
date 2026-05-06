@@ -82,4 +82,22 @@ describe("useSSE", () => {
     act(() => first.emit({ type: "started" }, "0"));
     expect(sessionStorage.getItem("sse:lastId:/api/runs/r1/events")).toBe("7");
   });
+
+  it("prepends NEXT_PUBLIC_API_BASE_URL when set (cross-origin deploy)", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.com");
+    renderHook(() => useSSE("/api/runs/r1/events"));
+    const es = MockEventSource.instances[0];
+    // BASE 가 설정된 경우 EventSource URL 이 절대 URL 로 시작해야 한다.
+    // apiFetch 와 동일 패턴 — 그렇지 않으면 cross-origin 배포에서 Next origin 으로 붙어
+    // 쿠키 미포함 + 권한 거부.
+    expect(es.url).toMatch(/^https:\/\/api\.example\.com\/api\/runs\/r1\/events/);
+  });
+
+  it("uses raw path when NEXT_PUBLIC_API_BASE_URL is empty (dev with rewrites)", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "");
+    renderHook(() => useSSE("/api/runs/r1/events"));
+    const es = MockEventSource.instances[0];
+    // BASE 가 빈 문자열이면 raw path 그대로 — Next dev rewrites 가 처리.
+    expect(es.url).toMatch(/^\/api\/runs\/r1\/events/);
+  });
 });
