@@ -74,4 +74,12 @@ describe("useSSE", () => {
     expect(MockEventSource.instances.length).toBe(1);
   });
 
+  it("ignores synthetic id=0 after a higher id is already stored", async () => {
+    renderHook(() => useSSE("/api/runs/r1/events"));
+    const first = MockEventSource.instances[0];
+    act(() => first.emit({ type: "persona_done", event_id: 7 }, "7"));
+    // 서버가 재연결 시 id=0의 synthetic started 이벤트를 흘려보내도 stored lastId는 유지.
+    act(() => first.emit({ type: "started" }, "0"));
+    expect(sessionStorage.getItem("sse:lastId:/api/runs/r1/events")).toBe("7");
+  });
 });

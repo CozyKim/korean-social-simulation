@@ -37,9 +37,15 @@ export function useSSE(url: string, options: UseSseOptions = {}) {
     es.onmessage = (raw) => {
       try {
         const parsed = JSON.parse(raw.data) as SseEvent;
+        // 서버는 재연결 시 id=0의 synthetic started 이벤트를 흘려보낸다.
+        // 새 id가 기존 stored 보다 클 때만 갱신해 lastId 0 회귀 → 중복 replay 방지.
         if (raw.lastEventId) {
-          lastIdRef.current = raw.lastEventId;
-          sessionStorage.setItem(`sse:lastId:${url}`, raw.lastEventId);
+          const newId = parseInt(raw.lastEventId, 10);
+          const oldId = parseInt(lastIdRef.current || "0", 10);
+          if (Number.isFinite(newId) && newId > oldId) {
+            lastIdRef.current = raw.lastEventId;
+            sessionStorage.setItem(`sse:lastId:${url}`, raw.lastEventId);
+          }
         }
         setEvents((prev) => [...prev, parsed]);
         onEvent?.(parsed);
