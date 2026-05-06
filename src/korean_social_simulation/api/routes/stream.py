@@ -12,6 +12,7 @@ from fastapi import APIRouter, Header, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 
+from korean_social_simulation.api.avatar import avatar_key_from_row
 from korean_social_simulation.api.deps import SettingsDep, is_owner_cookie_valid
 from korean_social_simulation.api.job_manager import JobManager, JobStatus
 from korean_social_simulation.api.safe_path import resolve_run_path
@@ -65,40 +66,33 @@ async def stream_run_events(
     jm = _job_manager(request)
     job = jm.get(run_id)
 
-    # ephemeral guest run (``/api/try``) 은 디스크 산출물(scenario.json/reactions.parquet)
-    # 이 없어도 익명 사용자에게 라이브 스트림을 열어줘야 한다. JobManager 에 등록된
-    # ``public=True`` 인 job 은 status 와 무관하게 in-memory 큐+backfill 로 처리한다.
-    if job is not None and (is_owner or job.public):
-        # last_event_id 가 None 이면 0 으로 보정해 deque 의 모든 이벤트를 backfill —
-        # 이미 완료된 ephemeral job 의 client 가 늦게 구독해도 ``completed`` 이벤트를
-        # 받고 정상 종료되도록 한다.
+    # in-memory 분기를 두 갈래로 나눈다:
+    # - ephemeral guest (``job.public=True``): ``/api/try`` mini-run. 디스크 산출물이
+    #   전혀 없으므로 status 와 무관하게 in-memory 큐+backfill 로 처리해야 익명 게스트가
+    #   완료 후에도 ``completed`` 이벤트를 받고 종료할 수 있다.
+    # - 일반 owner job: 진행 중(STARTING/RUNNING) 일 때만 in-memory live. 완료/실패 후엔
+    #   디스크 parquet replay 로 fall through 해야 한다 — ``JobState.events`` deque 는
+    #   maxlen=1000 이라 ``n=1000`` 케이스에서 첫 persona_done 이 evict 되어 backfill 이
+    #   누락되기 때문이다.
+    if job is not None and job.public:
+        # ephemeral guest. last_event_id 가 None 이면 0 으로 보정해 deque 의 모든 이벤트를
+        # backfill — 이미 완료된 ephemeral job 의 client 가 늦게 구독해도 ``completed``
+        # 이벤트를 받고 정상 종료되도록 한다.
         return EventSourceResponse(_live_stream(jm, run_id, last_event_id if last_event_id is not None else 0))
 
     if job is not None and job.status in {JobStatus.STARTING, JobStatus.RUNNING}:
+        # 진행 중인 owner job — 디스크 meta 가 아직 없을 수도 있으므로 fallback 빈 dict.
         meta = _load_scenario_meta(settings.runs_root, run_id) or {}
         if not _is_visible(meta, is_owner):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
         return EventSourceResponse(_live_stream(jm, run_id, last_event_id))
 
-    # in-memory job 이 없거나 비활성 → 디스크 산출물에서 meta 로 가시성 확인.
-    # ``run_id`` 가 traversal 시도면 여기서 404 로 차단된다.
+    # 완료/실패된 owner job 또는 in-memory 등록 자체가 없는 경우 — 디스크 replay.
     run_path = resolve_run_path(settings.runs_root, run_id)
     meta = _load_scenario_meta(settings.runs_root, run_id)
-    if meta is None:
-        # 아직 active(STARTING/RUNNING)인 job을 위에서 확인했으므로 — 여기까지 왔다면
-        # job이 없거나 이미 완료/실패됐지만 parquet이 없다.
-        # job 자체가 존재하고 완료됐을 수도 있으므로 job.status도 확인.
-        if job is not None:
-            # job은 있지만 scenario.json이 아직 없으면(파일 미완성 등) 404
-            if not _is_visible({}, is_owner):
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-        else:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    if meta is not None and not _is_visible(meta, is_owner):
+    if meta is None or not _is_visible(meta, is_owner):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    if meta is not None:
-        return EventSourceResponse(_replay_stream(run_path, last_event_id or 0))
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return EventSourceResponse(_replay_stream(run_path, last_event_id or 0))
 
 
 async def _live_stream(
@@ -155,6 +149,8 @@ async def _replay_stream(run_path: Path, last_event_id: int) -> AsyncIterator[di
         eid = int(idx) + 1
         if eid <= last_event_id:
             continue
+        # avatar_key 는 row 에 sex/age/province 가 있을 때만 산출. live 분기와 형식을 맞춤.
+        row_dict = row.to_dict() if hasattr(row, "to_dict") else dict(row)
         evt = {
             "type": "persona_done",
             "event_id": eid,
@@ -165,6 +161,7 @@ async def _replay_stream(run_path: Path, last_event_id: int) -> AsyncIterator[di
                 "age": int(row["age"]) if pd.notna(row.get("age")) else None,
                 "province": row.get("province"),
             },
+            "avatar_key": avatar_key_from_row(row_dict),
             "reaction": {
                 "stance": row.get("stance"),
                 "intensity": int(row["intensity"]) if pd.notna(row.get("intensity")) else None,

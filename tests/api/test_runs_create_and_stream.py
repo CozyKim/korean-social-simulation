@@ -139,3 +139,53 @@ def test_sse_replay_resumes_after_last_event_id(monkeypatch, client: TestClient)
     # replay 경로의 event_id는 row index + 1 (1..N), 그 후 completed = N+1
     assert all(e["event_id"] >= 3 for e in persona_events), persona_events
     assert any(e["type"] == "completed" for e in received)
+
+
+def test_completed_owner_run_uses_disk_replay_not_in_memory(monkeypatch, client: TestClient) -> None:
+    """완료된 owner run 을 재구독하면 in-memory deque(maxlen=1000) backfill 이 아니라
+    디스크 parquet replay 분기로 가야 한다.
+
+    배경: 허용 최대값 ``n=1000`` 에서 ``JobState.events`` deque 는 persona_done 1000개 +
+    completed 1개로 가득 차 첫 persona_done 이 evict 된다. 디스크 산출물이 있는
+    완료/실패 owner run 은 무조건 ``_replay_stream`` 으로 fall through 해야 클라이언트가
+    빠짐없이 N 개를 받는다.
+
+    분별 방법: live(``_live_stream``) 첫 이벤트는 ``{"run_id": ...}`` 키를 포함하고
+    replay(``_replay_stream``) 첫 이벤트는 ``{"total": N}`` 키를 포함한다.
+    """
+    import json
+
+    from tests.test_e2e import _patch_llm_and_data
+
+    with _patch_llm_and_data(monkeypatch, n=500):
+        _login(client)
+        r = client.post(
+            "/api/runs",
+            json={"scenario_title": "t", "scenario_stimulus": "s", "n": 3, "model": "vllm-qwen"},
+        )
+        run_id = r.json()["run_id"]
+
+        # 1차 — 완료까지 소비. 백그라운드 task 가 ``jm.complete`` 를 호출한 뒤에는
+        # JobState 가 status=COMPLETED 로 in-memory 에 그대로 남는다.
+        with client.stream("GET", f"/api/runs/{run_id}/events") as stream:
+            for line in stream.iter_lines():
+                if line.startswith("data:"):
+                    payload = json.loads(line.removeprefix("data:").strip())
+                    if payload.get("type") in {"completed", "error"}:
+                        break
+
+        # 2차 — 같은 run_id 를 재구독. disk parquet replay 로 가야 한다.
+        first_started: dict | None = None
+        with client.stream("GET", f"/api/runs/{run_id}/events") as stream:
+            for line in stream.iter_lines():
+                if line.startswith("data:"):
+                    payload = json.loads(line.removeprefix("data:").strip())
+                    if payload.get("type") == "started":
+                        first_started = payload
+                        break
+
+    assert first_started is not None
+    # replay 분기는 'total' 을 포함하고 'run_id' 는 포함하지 않는다.
+    assert "total" in first_started, f"expected disk replay, got live event {first_started}"
+    assert first_started.get("total") == 3
+    assert "run_id" not in first_started
