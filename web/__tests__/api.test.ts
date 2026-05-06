@@ -27,4 +27,28 @@ describe("apiFetch", () => {
     );
     await expect(apiFetch("/api/me")).rejects.toBeInstanceOf(ApiError);
   });
+
+  it("returns undefined for 204 No Content without throwing", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 204 }))
+    );
+    const result = await apiFetch<undefined>("/api/runs/abc", { method: "DELETE" });
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined when content-length is 0", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(null, {
+            status: 200,
+            headers: { "content-length": "0" },
+          })
+      )
+    );
+    const result = await apiFetch<undefined>("/api/empty");
+    expect(result).toBeUndefined();
+  });
 });

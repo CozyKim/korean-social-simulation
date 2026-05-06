@@ -28,6 +28,10 @@ export async function apiFetch<T>(
     }
     throw new ApiError(res.status, detail);
   }
+  // 204 No Content / 빈 응답은 res.json() 호출 시 SyntaxError → undefined 반환.
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return undefined as T;
+  }
   return (await res.json()) as T;
 }
 
