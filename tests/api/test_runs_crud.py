@@ -99,6 +99,66 @@ def test_delete_run_rejects_path_traversal(settings_env: Path, client: TestClien
     assert runs_root.exists()
 
 
+# 라우터까지 도달하는 단일-세그먼트 traversal payload — codex 가 지적한 핵심 시나리오.
+# 슬래시 포함 변형(``../x``, ``/etc/passwd``)은 클라이언트/스타렛 단계에서 다른 라우트로
+# 정규화·매칭될 수 있어 의미가 달라지므로 별도 케이스(_test_delete_run_rejects_path_traversal_)
+# 에서 외부 디렉터리 보존 여부로 확인한다.
+_TRAVERSAL_RUN_IDS = (
+    "..",
+    "%2E%2E",
+    "%2E%2E%2F",
+    ".%2E",
+)
+
+
+def test_get_run_rejects_path_traversal(settings_env: Path, client: TestClient) -> None:
+    """GET /api/runs/{run_id} 도 traversal 시도를 거부해야 한다."""
+    _login(client)
+    for run_id in _TRAVERSAL_RUN_IDS:
+        r = client.get(f"/api/runs/{run_id}")
+        assert r.status_code in {400, 404, 405}, f"{run_id!r} returned {r.status_code}"
+
+
+def test_patch_run_rejects_path_traversal(settings_env: Path, client: TestClient) -> None:
+    """PATCH /api/runs/{run_id} 도 traversal 시도를 거부해야 한다."""
+    _login(client)
+    for run_id in _TRAVERSAL_RUN_IDS:
+        r = client.patch(f"/api/runs/{run_id}", json={"public": True})
+        assert r.status_code in {400, 404, 405}, f"{run_id!r} returned {r.status_code}"
+
+
+def test_stream_events_rejects_path_traversal(settings_env: Path, client: TestClient) -> None:
+    """GET /api/runs/{run_id}/events SSE 도 traversal 시도를 거부해야 한다."""
+    _login(client)
+    for run_id in _TRAVERSAL_RUN_IDS:
+        r = client.get(f"/api/runs/{run_id}/events")
+        assert r.status_code in {400, 404, 405}, f"{run_id!r} returned {r.status_code}"
+
+
+def test_stream_reactions_rejects_path_traversal(settings_env: Path, client: TestClient) -> None:
+    """GET /api/runs/{run_id}/reactions 도 traversal 시도를 거부해야 한다."""
+    _login(client)
+    for run_id in _TRAVERSAL_RUN_IDS:
+        r = client.get(f"/api/runs/{run_id}/reactions")
+        assert r.status_code in {400, 404, 405}, f"{run_id!r} returned {r.status_code}"
+
+
+def test_stream_charts_rejects_path_traversal(settings_env: Path, client: TestClient) -> None:
+    """GET /api/runs/{run_id}/charts/{name} 도 traversal 시도를 거부해야 한다."""
+    _login(client)
+    for run_id in _TRAVERSAL_RUN_IDS:
+        r = client.get(f"/api/runs/{run_id}/charts/x.png")
+        assert r.status_code in {400, 404, 405}, f"{run_id!r} returned {r.status_code}"
+
+
+def test_stream_report_rejects_path_traversal(settings_env: Path, client: TestClient) -> None:
+    """GET /api/runs/{run_id}/report 도 traversal 시도를 거부해야 한다."""
+    _login(client)
+    for run_id in _TRAVERSAL_RUN_IDS:
+        r = client.get(f"/api/runs/{run_id}/report")
+        assert r.status_code in {400, 404, 405}, f"{run_id!r} returned {r.status_code}"
+
+
 def test_get_reactions_private_run_anonymous_404(settings_env: Path, client: TestClient) -> None:
     _make_run(settings_env / "runs", "priv", public=False)
     r = client.get("/api/runs/priv/reactions")

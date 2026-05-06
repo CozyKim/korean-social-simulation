@@ -14,6 +14,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from korean_social_simulation.api.deps import SettingsDep, is_owner_cookie_valid
 from korean_social_simulation.api.job_manager import JobManager, JobStatus
+from korean_social_simulation.api.safe_path import resolve_run_path
 
 router = APIRouter(prefix="/api", tags=["stream"])
 
@@ -79,6 +80,9 @@ async def stream_run_events(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
         return EventSourceResponse(_live_stream(jm, run_id, last_event_id))
 
+    # in-memory job 이 없거나 비활성 → 디스크 산출물에서 meta 로 가시성 확인.
+    # ``run_id`` 가 traversal 시도면 여기서 404 로 차단된다.
+    run_path = resolve_run_path(settings.runs_root, run_id)
     meta = _load_scenario_meta(settings.runs_root, run_id)
     if meta is None:
         # 아직 active(STARTING/RUNNING)인 job을 위에서 확인했으므로 — 여기까지 왔다면
@@ -93,7 +97,7 @@ async def stream_run_events(
     if meta is not None and not _is_visible(meta, is_owner):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     if meta is not None:
-        return EventSourceResponse(_replay_stream(settings.runs_root / run_id, last_event_id or 0))
+        return EventSourceResponse(_replay_stream(run_path, last_event_id or 0))
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
 
@@ -194,10 +198,11 @@ def get_reactions(
         HTTPException(404): run이 없거나 비공개이고 오너가 아닌 경우, 또는 파일 미존재 시.
     """
     is_owner = is_owner_cookie_valid(settings, request.cookies.get("kss_owner"))
+    run_path = resolve_run_path(settings.runs_root, run_id)
     meta = _load_scenario_meta(settings.runs_root, run_id)
     if meta is None or not _is_visible(meta, is_owner):
         raise HTTPException(status_code=404)
-    parquet = settings.runs_root / run_id / "reactions.parquet"
+    parquet = run_path / "reactions.parquet"
     if not parquet.exists():
         raise HTTPException(status_code=404)
 
@@ -231,10 +236,11 @@ def get_chart(
         HTTPException(404): run이 없거나 비공개이고 오너가 아닌 경우, 파일 미존재, 또는 허용되지 않는 확장자.
     """
     is_owner = is_owner_cookie_valid(settings, request.cookies.get("kss_owner"))
+    run_path = resolve_run_path(settings.runs_root, run_id)
     meta = _load_scenario_meta(settings.runs_root, run_id)
     if meta is None or not _is_visible(meta, is_owner):
         raise HTTPException(status_code=404)
-    chart = settings.runs_root / run_id / "charts" / name
+    chart = run_path / "charts" / name
     if not chart.exists() or chart.suffix.lower() not in {".png", ".svg"}:
         raise HTTPException(status_code=404)
     media = "image/png" if chart.suffix.lower() == ".png" else "image/svg+xml"
@@ -261,10 +267,11 @@ def get_report(
         HTTPException(404): run이 없거나 비공개이고 오너가 아닌 경우, 또는 파일 미존재 시.
     """
     is_owner = is_owner_cookie_valid(settings, request.cookies.get("kss_owner"))
+    run_path = resolve_run_path(settings.runs_root, run_id)
     meta = _load_scenario_meta(settings.runs_root, run_id)
     if meta is None or not _is_visible(meta, is_owner):
         raise HTTPException(status_code=404)
-    report = settings.runs_root / run_id / "report.md"
+    report = run_path / "report.md"
     if not report.exists():
         raise HTTPException(status_code=404)
     return StreamingResponse(report.open("rb"), media_type="text/markdown; charset=utf-8")
