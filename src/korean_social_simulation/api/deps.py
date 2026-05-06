@@ -63,9 +63,23 @@ def verify_owner_token(settings: Settings, candidate: str) -> bool:
     return hmac.compare_digest(settings.owner_token, candidate)
 
 
-def client_ip(request: Request) -> str:
-    """X-Forwarded-For 첫 번째 또는 client.host."""
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
+def client_ip(settings: Settings, request: Request) -> str:
+    """클라이언트 IP 추출 — proxy 신뢰 정책에 따라 결정.
+
+    ``settings.trust_proxy_headers`` 가 True 일 때만 ``X-Forwarded-For`` 첫 값을
+    사용하고, 그 외에는 ``request.client.host`` 를 사용한다. 직접 노출된 서버에서
+    무조건 X-FF 를 신뢰하면 임의 클라이언트가 헤더를 spoof 해 IP rate limit 을
+    우회할 수 있다.
+
+    Args:
+        settings: ``trust_proxy_headers`` 플래그 보유.
+        request: FastAPI Request.
+
+    Returns:
+        IP 문자열. ``request.client`` 가 없고 X-FF 도 사용하지 않는 경우 ``"unknown"``.
+    """
+    if settings.trust_proxy_headers:
+        fwd = request.headers.get("x-forwarded-for")
+        if fwd:
+            return fwd.split(",")[0].strip()
     return request.client.host if request.client else "unknown"

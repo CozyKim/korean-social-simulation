@@ -86,7 +86,7 @@ async def try_run(
     if jm.active_count() >= GUEST_GLOBAL_CONCURRENT_LIMIT:
         raise HTTPException(status_code=503, detail="too many concurrent guest runs")
 
-    ip = client_ip(request)
+    ip = client_ip(settings, request)
     limiter = get_limiter()
     if not limiter.hit("try_run", ip, max_per_window=GUEST_PER_IP_PER_DAY, window_s=GUEST_WINDOW_S):
         raise HTTPException(

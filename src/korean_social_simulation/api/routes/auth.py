@@ -25,7 +25,7 @@ def login(
     request: Request,
     settings: SettingsDep,
 ) -> dict[str, bool]:
-    ip = client_ip(request)
+    ip = client_ip(settings, request)
     limiter = get_limiter()
     if not limiter.hit("auth_login", ip, max_per_window=5, window_s=60):
         raise HTTPException(

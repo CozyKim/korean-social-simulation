@@ -44,6 +44,7 @@ class Settings:
     cookie_max_age_seconds: int = 60 * 60 * 24 * 30  # 30일
     cookie_samesite: CookieSameSite = "lax"
     cookie_secure: bool = False
+    trust_proxy_headers: bool = False
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -64,4 +65,5 @@ class Settings:
             vercel_revalidate_hook_url=os.environ.get("VERCEL_REVALIDATE_HOOK_URL"),
             cookie_samesite=_parse_samesite(os.environ.get("KSS_COOKIE_SAMESITE")),
             cookie_secure=_parse_bool(os.environ.get("KSS_COOKIE_SECURE")),
+            trust_proxy_headers=_parse_bool(os.environ.get("KSS_TRUST_PROXY_HEADERS")),
         )
