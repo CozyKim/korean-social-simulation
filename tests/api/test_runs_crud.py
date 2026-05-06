@@ -78,6 +78,27 @@ def test_delete_run(settings_env: Path, client: TestClient) -> None:
     assert not (settings_env / "runs" / "rid").exists()
 
 
+def test_delete_run_rejects_path_traversal(settings_env: Path, client: TestClient) -> None:
+    """percent-encoded `..` 같은 traversal 시도는 거부되어야 하고 runs_root 의 형제
+    디렉터리는 절대 삭제되지 않아야 한다."""
+    runs_root = settings_env / "runs"
+    sibling = settings_env / "scenarios"
+    assert sibling.exists()  # conftest 가 만들어 둠
+
+    _login(client)
+
+    # 다양한 traversal 변형 — 모두 4xx 로 거부되어야 한다.
+    # 슬래시가 path 안에 들어간 변형(`../scenarios`, `/etc/passwd`)은 FastAPI 라우터
+    # 단계에서 405/404 로 떨어지지만, 그래도 절대 외부 디렉터리는 삭제되지 말아야 한다.
+    for run_id in ("..", "%2E%2E", "../scenarios", "..%2Fscenarios", "foo/../..", "/etc/passwd"):
+        r = client.delete(f"/api/runs/{run_id}")
+        assert r.status_code in {400, 404, 405}, f"{run_id!r} returned {r.status_code}"
+
+    # 외부 디렉터리는 손상되지 않아야 한다.
+    assert sibling.exists()
+    assert runs_root.exists()
+
+
 def test_get_reactions_private_run_anonymous_404(settings_env: Path, client: TestClient) -> None:
     _make_run(settings_env / "runs", "priv", public=False)
     r = client.get("/api/runs/priv/reactions")

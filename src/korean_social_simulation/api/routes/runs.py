@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import shutil
 import uuid
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -33,6 +35,36 @@ from korean_social_simulation.simulate import asimulate
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["runs"])
+
+
+# run_id 화이트리스트 — Run.create 가 만드는 ID 형식(YYYYMMDD-HHMMSS-...-slug) 과
+# uuid.uuid4().hex 둘 다 수용한다. ``..`` 나 슬래시 등 traversal 문자는 차단.
+_RUN_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _resolve_run_path(runs_root: Path, run_id: str) -> Path:
+    """``runs_root`` 내부의 정상 run 디렉터리 경로를 안전하게 반환한다.
+
+    Args:
+        runs_root: runs 루트 디렉터리 (절대경로 권장).
+        run_id: 사용자 입력 run 식별자.
+
+    Returns:
+        ``runs_root / run_id`` 의 resolve 결과 — 반드시 ``runs_root`` 하위.
+
+    Raises:
+        HTTPException(400): ``run_id`` 가 화이트리스트에 맞지 않거나, 경로가
+            ``runs_root`` 외부를 가리키는 경우.
+    """
+    if not _RUN_ID_RE.fullmatch(run_id) or run_id in {".", ".."}:
+        raise HTTPException(status_code=400, detail="invalid run_id")
+    runs_root_resolved = runs_root.resolve()
+    candidate = (runs_root / run_id).resolve()
+    try:
+        candidate.relative_to(runs_root_resolved)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid run_id") from exc
+    return candidate
 
 
 def _job_manager(request: Request) -> JobManager:
@@ -245,13 +277,15 @@ async def delete_run(run_id: str, settings: SettingsDep) -> None:
     """run 디렉터리를 완전히 삭제한다 (오너 전용).
 
     Args:
-        run_id: 삭제할 run의 ID.
+        run_id: 삭제할 run의 ID. 화이트리스트(``[A-Za-z0-9._-]+``) 외의 문자는
+            거부되며 ``..`` 등 traversal 시도는 400 으로 차단된다.
         settings: 앱 설정 (runs_root).
 
     Raises:
-        HTTPException: run이 존재하지 않으면 404.
+        HTTPException(400): run_id 가 형식에 맞지 않거나 runs_root 외부를 가리킬 때.
+        HTTPException(404): run 디렉터리가 존재하지 않을 때.
     """
-    run_path = settings.runs_root / run_id
-    if not run_path.exists():
+    run_path = _resolve_run_path(settings.runs_root, run_id)
+    if not run_path.exists() or not run_path.is_dir():
         raise HTTPException(status_code=404)
     shutil.rmtree(run_path)
