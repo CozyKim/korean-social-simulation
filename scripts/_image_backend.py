@@ -70,3 +70,32 @@ def to_webp(png_bytes: bytes, *, quality: int = 80) -> bytes:
     out = BytesIO()
     img.save(out, format="WEBP", quality=quality)
     return out.getvalue()
+
+
+def resize_image(raw: bytes, target: tuple[int, int], *, quality: int = 80) -> bytes:
+    """이미지 bytes 를 ``target`` 크기로 리사이즈. 입력 형식(PNG/WebP)을 보존.
+
+    gpt-image-1 은 256/512 같은 작은 크기를 직접 지원하지 않으므로, 1024×1024 결과를
+    받아 로컬에서 다운스케일할 때 사용. LANCZOS 가 다운스케일에 적합.
+
+    Args:
+        raw: 입력 이미지 bytes (PNG 또는 WebP).
+        target: 출력 크기 ``(width, height)``.
+        quality: WebP 인코딩 품질 (PNG 는 무손실이라 무시).
+
+    Returns:
+        리사이즈된 이미지 bytes — 입력과 동일 형식 (PNG → PNG, WebP → WebP).
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    src = Image.open(BytesIO(raw))
+    fmt = src.format or "PNG"
+    resized = src.convert("RGB").resize(target, Image.Resampling.LANCZOS)
+    out = BytesIO()
+    if fmt.upper() == "WEBP":
+        resized.save(out, format="WEBP", quality=quality)
+    else:
+        resized.save(out, format="PNG")
+    return out.getvalue()

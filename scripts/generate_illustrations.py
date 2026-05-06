@@ -14,7 +14,7 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts._image_backend import ImageBackend, ImageSize, OpenAIImageBackend, to_webp
+from scripts._image_backend import ImageBackend, ImageSize, OpenAIImageBackend, resize_image, to_webp
 
 DEFAULT_OUT_DIR = Path(__file__).resolve().parent.parent / "web" / "public" / "illustrations"
 
@@ -28,14 +28,19 @@ class IllustrationSpec:
     Attributes:
         name: 논리 이름 (예: ``hero``, ``category-marketing``).
         filename: 저장 파일명 (확장자 포함; ``.webp`` 또는 ``.png``).
-        size: ``gpt-image-1`` 가 받는 크기 Literal.
+        size: ``gpt-image-1`` 가 받는 크기 Literal — ``auto`` / ``1024x1024`` /
+            ``1536x1024`` / ``1024x1536`` 만 지원.
         prompt: 한국어 생성 프롬프트.
+        final_size: ``None`` 이면 API 결과를 그대로 디스크에 저장. ``(w, h)`` 튜플이면
+            저장 직전에 그 크기로 리사이즈 — gpt-image-1 가 256/512 를 직접 못 받으므로
+            favicon (256) / category 아이콘 (512) 은 1024×1024 로 받아 다운스케일한다.
     """
 
     name: str
     filename: str
     size: ImageSize
     prompt: str
+    final_size: tuple[int, int] | None = None
 
 
 ILLUSTRATION_SPECS: tuple[IllustrationSpec, ...] = (
@@ -54,38 +59,44 @@ ILLUSTRATION_SPECS: tuple[IllustrationSpec, ...] = (
     IllustrationSpec(
         "favicon",
         "favicon.png",
-        "256x256",
+        "1024x1024",
         _STYLE_HEADER + "흰 배경에 빨간 말풍선 안에 한글 자음 ㅎ, 정사각형 아이콘.",
+        final_size=(256, 256),
     ),
     IllustrationSpec(
         "category-marketing",
         "category-marketing.webp",
-        "512x512",
+        "1024x1024",
         _STYLE_HEADER + "메가폰과 한국 광고지가 어우러진 작은 아이콘.",
+        final_size=(512, 512),
     ),
     IllustrationSpec(
         "category-social",
         "category-social.webp",
-        "512x512",
+        "1024x1024",
         _STYLE_HEADER + "한국 시민 군중과 말풍선 네트워크 아이콘.",
+        final_size=(512, 512),
     ),
     IllustrationSpec(
         "category-product",
         "category-product.webp",
-        "512x512",
+        "1024x1024",
         _STYLE_HEADER + "쇼핑백과 한국 상품 박스가 어우러진 아이콘.",
+        final_size=(512, 512),
     ),
     IllustrationSpec(
         "category-policy",
         "category-policy.webp",
-        "512x512",
+        "1024x1024",
         _STYLE_HEADER + "한국 국회의사당 실루엣과 투표용지 아이콘.",
+        final_size=(512, 512),
     ),
     IllustrationSpec(
         "category-other",
         "category-other.webp",
-        "512x512",
+        "1024x1024",
         _STYLE_HEADER + "물음표와 다양한 말풍선이 어우러진 추상 아이콘.",
+        final_size=(512, 512),
     ),
 )
 
@@ -96,6 +107,15 @@ class GenerateSummary:
 
     generated: int
     skipped: int
+
+
+def _is_image_bytes(raw: bytes) -> bool:
+    """PNG (``\\x89PNG``) 또는 WebP (``RIFF....WEBP``) 시그니처면 True."""
+    if raw.startswith(b"\x89PNG"):
+        return True
+    if len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return True
+    return False
 
 
 def run(
@@ -123,6 +143,11 @@ def run(
             skipped += 1
             continue
         raw = backend.generate(prompt=spec.prompt, size=spec.size)
+        # 작은 크기(256/512) 는 gpt-image-1 가 직접 못 받으므로 1024×1024 로 받아 로컬 다운스케일.
+        # 형식 변환(to_webp) 전에 리사이즈 — 입력 형식을 보존한 채 작업하면 변환 횟수가 한 번 줄어든다.
+        # 더미 bytes (테스트 fixture 등 PNG/WebP 시그니처가 없는 입력) 는 통과시켜 멱등 테스트를 깨지 않는다.
+        if spec.final_size is not None and _is_image_bytes(raw):
+            raw = resize_image(raw, spec.final_size)
         if spec.filename.endswith(".webp") and raw.startswith(b"\x89PNG"):
             raw = to_webp(raw)
         target.write_bytes(raw)
