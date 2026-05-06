@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from korean_social_simulation.api.avatar import avatar_key_from_row
 from korean_social_simulation.api.deps import (
     SettingsDep,
     is_owner_cookie_valid,
@@ -72,16 +73,8 @@ def _job_manager(request: Request) -> JobManager:
     return request.app.state.job_manager
 
 
-def _avatar_key_from_row(row: dict[str, Any]) -> str | None:
-    """sex_ageBand_province → 정적 자산 lookup 키. 후속 plan에서 자산 작성됨."""
-    from korean_social_simulation.data.sampler import age_band
-
-    sex = row.get("sex")
-    age = row.get("age")
-    province = row.get("province")
-    if not (isinstance(sex, str) and isinstance(age, (int, float)) and isinstance(province, str)):
-        return None
-    return f"{sex}_{age_band(int(age))}_{province}"
+# avatar_key_from_row 는 ``api.avatar`` 의 단일 진실원 헬퍼로 통합 — sex 한국어
+# 라벨(`남`/`여`) → canonical (`male`/`female`) 매핑이 들어 있다.
 
 
 @router.post(
@@ -120,7 +113,7 @@ async def create_run(
     async def _progress_sink(row: dict[str, Any]) -> None:
         state = jm.get(run_id)
         progress = state.progress if state is not None else 0
-        avatar_key = _avatar_key_from_row(row)
+        avatar_key = avatar_key_from_row(row)
         await jm.publish(
             run_id,
             {

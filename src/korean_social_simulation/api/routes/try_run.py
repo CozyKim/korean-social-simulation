@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
 
+from korean_social_simulation.api.avatar import avatar_key_from_row
 from korean_social_simulation.api.deps import SettingsDep, client_ip
 from korean_social_simulation.api.job_manager import JobManager
 from korean_social_simulation.api.ratelimit import get_limiter
@@ -106,6 +107,7 @@ async def try_run(
                     "age": row.get("age"),
                     "province": row.get("province"),
                 },
+                "avatar_key": avatar_key_from_row(row),
                 "reaction": {
                     "stance": row.get("stance"),
                     "intensity": row.get("intensity"),
