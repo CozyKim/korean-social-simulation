@@ -78,9 +78,9 @@ wandb/
 outputs/
 checkpoints/
 
-# 시뮬레이션 산출물 (runs)
-runs/
-scenarios/
+# 시뮬레이션 산출물 (runs) — 루트 한정 (web/app/scenarios/ 같은 라우트 폴더 매칭 방지)
+/runs/
+/scenarios/
 
 # 샘플 캐시
 .cache/
