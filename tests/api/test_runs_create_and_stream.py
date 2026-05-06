@@ -141,6 +141,91 @@ def test_sse_replay_resumes_after_last_event_id(monkeypatch, client: TestClient)
     assert any(e["type"] == "completed" for e in received)
 
 
+def test_sse_replay_resumes_from_query_param(monkeypatch, client: TestClient) -> None:
+    """완료된 run을 ``?last_event_id=`` 쿼리로 재구독해도 그 이후만 받아야 한다.
+
+    배경: EventSource 자동 재연결은 ``Last-Event-ID`` 헤더를 보내지만, 수동 재연결
+    (e.g. 페이지 새로고침 후 useSSE 가 store 의 ``lastEventId`` 로 재구독) 시에는
+    헤더를 추가할 수 없어 쿼리 파라미터 fallback 이 필요하다.
+    """
+    import json
+
+    from tests.test_e2e import _patch_llm_and_data
+
+    with _patch_llm_and_data(monkeypatch, n=500):
+        _login(client)
+        r = client.post(
+            "/api/runs",
+            json={"scenario_title": "t", "scenario_stimulus": "s", "n": 4, "model": "vllm-qwen"},
+        )
+        run_id = r.json()["run_id"]
+
+        # 1차 — 완료까지 소비
+        with client.stream("GET", f"/api/runs/{run_id}/events") as stream:
+            for line in stream.iter_lines():
+                if line.startswith("data:"):
+                    payload = json.loads(line.removeprefix("data:").strip())
+                    if payload.get("type") in {"completed", "error"}:
+                        break
+
+        # 2차 — 쿼리 파라미터로 last_event_id=2, replay 경로
+        received: list[dict] = []
+        with client.stream(
+            "GET",
+            f"/api/runs/{run_id}/events?last_event_id=2",
+        ) as stream:
+            for line in stream.iter_lines():
+                if line.startswith("data:"):
+                    payload = json.loads(line.removeprefix("data:").strip())
+                    received.append(payload)
+                    if payload.get("type") in {"completed", "error"}:
+                        break
+
+    persona_events = [e for e in received if e.get("type") == "persona_done"]
+    assert all(e["event_id"] >= 3 for e in persona_events), persona_events
+    assert any(e["type"] == "completed" for e in received)
+
+
+def test_sse_header_overrides_query_last_event_id(monkeypatch, client: TestClient) -> None:
+    """헤더와 쿼리가 동시에 올 경우 헤더가 우선해야 한다 (브라우저 자동 재연결)."""
+    import json
+
+    from tests.test_e2e import _patch_llm_and_data
+
+    with _patch_llm_and_data(monkeypatch, n=500):
+        _login(client)
+        r = client.post(
+            "/api/runs",
+            json={"scenario_title": "t", "scenario_stimulus": "s", "n": 4, "model": "vllm-qwen"},
+        )
+        run_id = r.json()["run_id"]
+
+        # 완료까지 소비
+        with client.stream("GET", f"/api/runs/{run_id}/events") as stream:
+            for line in stream.iter_lines():
+                if line.startswith("data:"):
+                    payload = json.loads(line.removeprefix("data:").strip())
+                    if payload.get("type") in {"completed", "error"}:
+                        break
+
+        # 헤더=3, 쿼리=0 — 헤더 우선이면 4번째 persona_done 부터 받아야 함
+        received: list[dict] = []
+        with client.stream(
+            "GET",
+            f"/api/runs/{run_id}/events?last_event_id=0",
+            headers={"Last-Event-ID": "3"},
+        ) as stream:
+            for line in stream.iter_lines():
+                if line.startswith("data:"):
+                    payload = json.loads(line.removeprefix("data:").strip())
+                    received.append(payload)
+                    if payload.get("type") in {"completed", "error"}:
+                        break
+
+    persona_events = [e for e in received if e.get("type") == "persona_done"]
+    assert all(e["event_id"] >= 4 for e in persona_events), persona_events
+
+
 def test_completed_owner_run_uses_disk_replay_not_in_memory(monkeypatch, client: TestClient) -> None:
     """완료된 owner run 을 재구독하면 in-memory deque(maxlen=1000) backfill 이 아니라
     디스크 parquet replay 분기로 가야 한다.

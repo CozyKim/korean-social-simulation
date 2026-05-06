@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pandas as pd
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 
@@ -46,7 +46,8 @@ async def stream_run_events(
     run_id: str,
     request: Request,
     settings: SettingsDep,
-    last_event_id: int | None = Header(default=None, alias="Last-Event-ID", convert_underscores=False),
+    last_event_id_header: int | None = Header(default=None, alias="Last-Event-ID", convert_underscores=False),
+    last_event_id_query: int | None = Query(default=None, alias="last_event_id"),
 ):
     """SSE: 진행 중이면 JobManager 큐, 완료된 run이면 parquet replay.
 
@@ -54,7 +55,11 @@ async def stream_run_events(
         run_id: 대상 run의 식별자.
         request: FastAPI Request (app.state 및 cookies 접근용).
         settings: 앱 설정 (runs_root 등).
-        last_event_id: 재연결 시 Last-Event-ID 헤더값 — 이미 수신한 이벤트를 건너뜀.
+        last_event_id_header: 재연결 시 ``Last-Event-ID`` 헤더값. 브라우저의 EventSource
+            자동 재연결이 자동으로 채운다.
+        last_event_id_query: 수동 재연결을 위한 ``?last_event_id=`` 쿼리 fallback —
+            클라이언트(useSSE)가 페이지 새로고침 후 store 의 ``lastEventId`` 로 재구독할
+            때 사용. 헤더가 있으면 헤더가 우선한다.
 
     Returns:
         EventSourceResponse — SSE 스트림.
@@ -62,6 +67,7 @@ async def stream_run_events(
     Raises:
         HTTPException(404): run이 존재하지 않거나 비공개이고 오너가 아닌 경우.
     """
+    last_event_id = last_event_id_header if last_event_id_header is not None else last_event_id_query
     is_owner = is_owner_cookie_valid(settings, request.cookies.get("kss_owner"))
     jm = _job_manager(request)
     job = jm.get(run_id)
