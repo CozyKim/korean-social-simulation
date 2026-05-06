@@ -8,6 +8,26 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
+
+CookieSameSite = Literal["lax", "strict", "none"]
+
+
+def _parse_samesite(raw: str | None) -> CookieSameSite:
+    """KSS_COOKIE_SAMESITE 파싱 — 허용값 외에는 ``lax`` 로 fallback."""
+    if not raw:
+        return "lax"
+    normalized = raw.strip().lower()
+    if normalized in {"lax", "strict", "none"}:
+        return normalized  # type: ignore[return-value]
+    return "lax"
+
+
+def _parse_bool(raw: str | None, *, default: bool = False) -> bool:
+    """``true`` / ``1`` / ``yes`` 만 True 로 인정 (대소문자 무시)."""
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"true", "1", "yes", "on"}
 
 
 @dataclass(frozen=True)
@@ -22,6 +42,8 @@ class Settings:
     vllm_base_url: str | None
     vercel_revalidate_hook_url: str | None
     cookie_max_age_seconds: int = 60 * 60 * 24 * 30  # 30일
+    cookie_samesite: CookieSameSite = "lax"
+    cookie_secure: bool = False
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -40,4 +62,6 @@ class Settings:
             cors_origins=tuple(o.strip() for o in origins_raw.split(",") if o.strip()),
             vllm_base_url=os.environ.get("VLLM_BASE_URL"),
             vercel_revalidate_hook_url=os.environ.get("VERCEL_REVALIDATE_HOOK_URL"),
+            cookie_samesite=_parse_samesite(os.environ.get("KSS_COOKIE_SAMESITE")),
+            cookie_secure=_parse_bool(os.environ.get("KSS_COOKIE_SECURE")),
         )

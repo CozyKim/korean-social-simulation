@@ -43,8 +43,8 @@ def login(
         value=issue_cookie(settings),
         max_age=settings.cookie_max_age_seconds,
         httponly=True,
-        secure=False,  # TODO secure flag in production
-        samesite="lax",
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
     )
     return {"ok": True}
 
