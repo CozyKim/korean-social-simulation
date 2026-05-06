@@ -45,8 +45,11 @@ async def try_run(
 ) -> CreateRunResponse:
     """게스트 mini-run 엔드포인트.
 
-    vLLM 가용 여부 확인 → IP rate limit → 전역 동시 한도 → 백그라운드 실행.
+    vLLM 가용 여부 확인 → 전역 동시 한도 → IP rate limit → 백그라운드 실행.
     결과는 디스크에 저장하지 않고 JobManager 이벤트로만 노출한다.
+
+    capacity check 가 quota 차감(``limiter.hit``) 보다 먼저 와야 한다 — 한도
+    초과로 503 이 나는데 quota 만 차감되면 첫 게스트가 24h 동안 lock-out 된다.
 
     Args:
         body: 시나리오 제목, 자극, 타입, n (1..20).
@@ -77,6 +80,12 @@ async def try_run(
         if vllm_status != "up":
             raise HTTPException(status_code=503, detail="vLLM unreachable")
 
+    # capacity 확인을 quota 차감보다 먼저 한다. 그렇지 않으면 saturation 시각에
+    # 들어온 첫 게스트가 503 거절을 받으면서도 24h quota 가 소모돼 lock-out 된다.
+    jm = _job_manager(request)
+    if jm.active_count() >= GUEST_GLOBAL_CONCURRENT_LIMIT:
+        raise HTTPException(status_code=503, detail="too many concurrent guest runs")
+
     ip = client_ip(request)
     limiter = get_limiter()
     if not limiter.hit("try_run", ip, max_per_window=GUEST_PER_IP_PER_DAY, window_s=GUEST_WINDOW_S):
@@ -85,10 +94,6 @@ async def try_run(
             detail="guest mini-run limited to 1 per day per IP",
             headers={"Retry-After": str(GUEST_WINDOW_S)},
         )
-
-    jm = _job_manager(request)
-    if jm.active_count() >= GUEST_GLOBAL_CONCURRENT_LIMIT:
-        raise HTTPException(status_code=503, detail="too many concurrent guest runs")
 
     run_id = uuid.uuid4().hex
     # ``public=True`` 로 등록해 익명 게스트가 자기 mini-run SSE 를 구독할 수 있게 한다.

@@ -127,3 +127,42 @@ def test_try_revalidates_stale_vllm_cache(monkeypatch, settings_env) -> None:
             r = c.post("/api/try", json={"scenario_title": "t", "scenario_stimulus": "s", "n": 2})
             # quota 가 보존됐다면 첫 호출로 처리 → 202
             assert r.status_code == 202
+
+
+@respx.mock
+def test_try_capacity_check_before_quota_charge(monkeypatch, settings_env) -> None:
+    """전역 동시 한도 초과로 503 이 날 때는 IP quota 가 차감되지 않아야 한다.
+
+    saturation 시각에 처음 들어온 게스트가 24h lock-out 되는 것을 방지.
+    """
+    monkeypatch.setenv("VLLM_BASE_URL", "https://vllm.example.com/v1")
+    respx.get("https://vllm.example.com/v1/models").mock(return_value=Response(200, json={"data": []}))
+    from korean_social_simulation.api.main import create_app
+    from korean_social_simulation.api.ratelimit import get_limiter
+    from korean_social_simulation.api.routes import health as health_routes
+    from korean_social_simulation.api.routes.try_run import GUEST_GLOBAL_CONCURRENT_LIMIT
+    from tests.test_e2e import _patch_llm_and_data
+
+    health_routes._vllm_state["status"] = "unknown"
+    health_routes._vllm_state["ts"] = 0.0
+    get_limiter().reset()
+
+    with _patch_llm_and_data(monkeypatch, n=500):
+        with TestClient(create_app()) as c:
+            jm = c.app.state.job_manager
+            # capacity 를 인위적으로 가득 채운다.
+            for i in range(GUEST_GLOBAL_CONCURRENT_LIMIT):
+                jm.register(f"saturate-{i}", total=1, public=False)
+            assert jm.active_count() >= GUEST_GLOBAL_CONCURRENT_LIMIT
+
+            r1 = c.post("/api/try", json={"scenario_title": "t", "scenario_stimulus": "s", "n": 2})
+            # capacity 초과 → 503, quota 미차감
+            assert r1.status_code == 503
+
+            # capacity 를 비우고 같은 IP 로 다시 호출 → 정상 처리돼야 한다 (quota 보존 증명).
+            for i in range(GUEST_GLOBAL_CONCURRENT_LIMIT):
+                jm._jobs.pop(f"saturate-{i}", None)
+            assert jm.active_count() == 0
+
+            r2 = c.post("/api/try", json={"scenario_title": "t", "scenario_stimulus": "s", "n": 2})
+            assert r2.status_code == 202
