@@ -91,4 +91,9 @@ scenarios/
 # git worktrees (frontend 등 isolated 작업)
 .worktrees/
 
+# Next.js / web 산출물
+web/node_modules
+web/.next
+web/out
+
 eda.ipynb

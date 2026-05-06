@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: 10 10 12;
+  --color-fg: 240 240 245;
+  --color-accent: 240 60 60;
+}
+
+html, body {
+  background-color: rgb(var(--color-bg));
+  color: rgb(var(--color-fg));
+  font-feature-settings: "ss01", "cv11";
+}
