@@ -56,3 +56,29 @@ async def test_explicit_run_id_creates_pending_dir_first(monkeypatch, tmp_path: 
     assert all(seen_during)
     assert (tmp_path / fixed_id / "reactions.parquet").exists()
     assert not (tmp_path / fixed_id / "reactions.partial.jsonl").exists()
+
+
+async def test_explicit_run_id_preserves_model_column(monkeypatch, tmp_path: Path) -> None:
+    """pending run 경로에서도 reactions.parquet에 ``model`` 컬럼이 보존된다.
+
+    POST /api/runs (FastAPI job manager) 경로 회귀 방지: simulate.py가 추가한
+    ``df["model"] = model`` 가 ``Run.finalize_pending`` 후에도 유지되어야 한다.
+    """
+    import pandas as pd
+
+    from tests.test_e2e import _patch_llm_and_data
+
+    fixed_id = "model-col-rid"
+    with _patch_llm_and_data(monkeypatch, n=500):
+        run = await asimulate(
+            scenario=Scenario(title="t", stimulus="s"),
+            n=3,
+            model="vllm-qwen",
+            seed=1,
+            runs_root=tmp_path,
+            min_cell_threshold=0,
+            run_id=fixed_id,
+        )
+    df = pd.read_parquet(run.path / "reactions.parquet")
+    assert "model" in df.columns
+    assert (df["model"] == "vllm-qwen").all()

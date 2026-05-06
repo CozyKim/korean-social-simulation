@@ -272,7 +272,7 @@ async def asimulate(
         raise RuntimeError(f"All {len(df)} simulations failed. Sample errors: {first_errors}. Check the run directory for details.")
 
     if pending_path is not None:
-        return Run.finalize_pending(pending_path, sample=sample)
+        return Run.finalize_pending(pending_path, sample=sample, extra_columns={"model": model})
 
     return Run.create(
         root=Path(runs_root),

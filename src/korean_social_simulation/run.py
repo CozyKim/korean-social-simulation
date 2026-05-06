@@ -154,12 +154,16 @@ class Run:
         path: Path,
         *,
         sample: pd.DataFrame,
+        extra_columns: dict[str, Any] | None = None,
     ) -> Run:
         """partial.jsonl을 reactions.parquet으로 변환하고 status=completed로 표시.
 
         Args:
             path: ``create_pending`` 으로 만든 run 디렉터리.
             sample: 사용된 페르소나 메타 — sample.parquet으로 저장.
+            extra_columns: partial.jsonl 행마다 채워두지 않고 finalize 시점에
+                broadcast해 추가할 컬럼 (예: ``{"model": "vllm-qwen"}``).
+                JSONL 라운드트립에서 누락되는 메타 컬럼 보존용.
 
         Returns:
             완성된 Run.
@@ -175,6 +179,9 @@ class Run:
 
         rows = [json.loads(line) for line in partial.read_text(encoding="utf-8").splitlines() if line.strip()]
         df = pd.DataFrame(rows) if rows else pd.DataFrame()
+        if extra_columns:
+            for col, value in extra_columns.items():
+                df[col] = value
         df.to_parquet(path / "reactions.parquet", index=False)
         sample.to_parquet(path / "sample.parquet", index=False)
         partial.unlink()
