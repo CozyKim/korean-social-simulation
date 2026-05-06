@@ -6,6 +6,7 @@ import asyncio
 import logging
 import shutil
 import tempfile
+import time
 import uuid
 from typing import Any
 
@@ -15,7 +16,7 @@ from korean_social_simulation.api.avatar import avatar_key_from_row
 from korean_social_simulation.api.deps import SettingsDep, client_ip
 from korean_social_simulation.api.job_manager import JobManager
 from korean_social_simulation.api.ratelimit import get_limiter
-from korean_social_simulation.api.routes.health import _check_vllm, _vllm_state
+from korean_social_simulation.api.routes.health import _VLLM_CACHE_TTL_S, _check_vllm, _vllm_state
 from korean_social_simulation.api.schemas import CreateRunResponse, TryRunRequest
 from korean_social_simulation.scenario import Scenario
 from korean_social_simulation.simulate import asimulate
@@ -63,9 +64,16 @@ async def try_run(
     if not settings.vllm_base_url:
         raise HTTPException(status_code=503, detail="vLLM not configured")
 
+    # health.py 와 동일한 60초 캐시를 공유하되, ``status="up"`` 이라도 TTL 을
+    # 넘겼다면 재검증해야 한다. 그렇지 않으면 vLLM 다운 후에도 게스트가 202 를
+    # 받고 quota 만 차감된 채 background job 이 실패한다.
     vllm_status = str(_vllm_state.get("status", "unknown"))
-    if vllm_status != "up":
+    cache_ts = float(_vllm_state.get("ts", 0.0))
+    is_stale = (time.monotonic() - cache_ts) > _VLLM_CACHE_TTL_S
+    if vllm_status != "up" or is_stale:
         vllm_status = await _check_vllm(settings.vllm_base_url)
+        _vllm_state["status"] = vllm_status
+        _vllm_state["ts"] = time.monotonic()
         if vllm_status != "up":
             raise HTTPException(status_code=503, detail="vLLM unreachable")
 

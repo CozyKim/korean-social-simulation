@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import respx
 from fastapi.testclient import TestClient
@@ -88,3 +89,41 @@ def test_try_stream_accessible_to_anonymous(monkeypatch, settings_env) -> None:
     types = [e.get("type") for e in events]
     assert "started" in types
     assert any(t == "completed" for t in types)
+
+
+@respx.mock
+def test_try_revalidates_stale_vllm_cache(monkeypatch, settings_env) -> None:
+    """캐시된 ``status="up"`` 가 TTL 을 넘긴 경우 재검증해야 한다.
+
+    vLLM 이 다운된 상태인데 stale 캐시 때문에 ``/api/try`` 가 202 로 통과되면
+    게스트는 quota 만 차감되고 background job 이 실패한다. 재검증으로 503 을
+    내리고 quota 도 보존돼야 한다.
+    """
+    monkeypatch.setenv("VLLM_BASE_URL", "https://vllm.example.com/v1")
+    # 실제 호출은 503 (다운 상태) — 재검증되면 down 으로 갱신돼야 함.
+    respx.get("https://vllm.example.com/v1/models").mock(return_value=Response(503))
+    from korean_social_simulation.api.main import create_app
+    from korean_social_simulation.api.ratelimit import get_limiter
+    from korean_social_simulation.api.routes import health as health_routes
+
+    # stale "up" 캐시 주입: ts 를 TTL 보다 훨씬 과거로.
+    health_routes._vllm_state["status"] = "up"
+    health_routes._vllm_state["ts"] = time.monotonic() - (health_routes._VLLM_CACHE_TTL_S + 10)
+    get_limiter().reset()
+
+    with TestClient(create_app()) as c:
+        r = c.post("/api/try", json={"scenario_title": "t", "scenario_stimulus": "s", "n": 2})
+        # stale cache 무시하고 재검증 → vLLM 다운 → 503
+        assert r.status_code == 503
+
+    # quota 가 차감되지 않았는지 확인: 캐시를 fresh up 으로 다시 주입하고 재호출 → 정상 처리.
+    respx.get("https://vllm.example.com/v1/models").mock(return_value=Response(200, json={"data": []}))
+    health_routes._vllm_state["status"] = "up"
+    health_routes._vllm_state["ts"] = time.monotonic()
+    from tests.test_e2e import _patch_llm_and_data
+
+    with _patch_llm_and_data(monkeypatch, n=500):
+        with TestClient(create_app()) as c:
+            r = c.post("/api/try", json={"scenario_title": "t", "scenario_stimulus": "s", "n": 2})
+            # quota 가 보존됐다면 첫 호출로 처리 → 202
+            assert r.status_code == 202
