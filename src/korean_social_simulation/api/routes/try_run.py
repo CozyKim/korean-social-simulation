@@ -82,7 +82,10 @@ async def try_run(
         raise HTTPException(status_code=503, detail="too many concurrent guest runs")
 
     run_id = uuid.uuid4().hex
-    jm.register(run_id, total=body.n)
+    # ``public=True`` 로 등록해 익명 게스트가 자기 mini-run SSE 를 구독할 수 있게 한다.
+    # ephemeral 실행이라 ``scenario.json`` 이 디스크에 남지 않으므로 stream.py 의
+    # disk-meta 가시성 체크만으로는 충분하지 않다.
+    jm.register(run_id, total=body.n, public=True)
     scenario = Scenario(
         title=body.scenario_title,
         stimulus=body.scenario_stimulus,

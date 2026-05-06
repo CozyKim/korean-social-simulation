@@ -64,6 +64,15 @@ async def stream_run_events(
     jm = _job_manager(request)
     job = jm.get(run_id)
 
+    # ephemeral guest run (``/api/try``) 은 디스크 산출물(scenario.json/reactions.parquet)
+    # 이 없어도 익명 사용자에게 라이브 스트림을 열어줘야 한다. JobManager 에 등록된
+    # ``public=True`` 인 job 은 status 와 무관하게 in-memory 큐+backfill 로 처리한다.
+    if job is not None and (is_owner or job.public):
+        # last_event_id 가 None 이면 0 으로 보정해 deque 의 모든 이벤트를 backfill —
+        # 이미 완료된 ephemeral job 의 client 가 늦게 구독해도 ``completed`` 이벤트를
+        # 받고 정상 종료되도록 한다.
+        return EventSourceResponse(_live_stream(jm, run_id, last_event_id if last_event_id is not None else 0))
+
     if job is not None and job.status in {JobStatus.STARTING, JobStatus.RUNNING}:
         meta = _load_scenario_meta(settings.runs_root, run_id) or {}
         if not _is_visible(meta, is_owner):

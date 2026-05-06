@@ -24,6 +24,21 @@ class JobStatus(enum.Enum):
 
 @dataclass
 class JobState:
+    """단일 run의 in-memory 상태.
+
+    Attributes:
+        run_id: run 식별자.
+        status: 현재 status (STARTING/RUNNING/COMPLETED/FAILED).
+        progress: 완료된 페르소나 수.
+        total: 총 페르소나 수.
+        next_event_id: 다음에 발급할 SSE event_id.
+        events: backfill 용 deque (최대 ``_EVENTS_MAX``).
+        subscribers: SSE 구독자 큐 집합.
+        public: 익명 사용자에게도 SSE 구독을 허용할지 여부. 게스트 mini-run
+            (``/api/try``) 처럼 ``scenario.json`` 디스크 산출물이 없는 ephemeral
+            job 도 라이브 스트림은 열어줘야 하므로 사용한다.
+    """
+
     run_id: str
     status: JobStatus = JobStatus.STARTING
     progress: int = 0
@@ -31,6 +46,7 @@ class JobState:
     next_event_id: int = 1
     events: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=_EVENTS_MAX))
     subscribers: set[asyncio.Queue[dict[str, Any]]] = field(default_factory=set)
+    public: bool = False
 
 
 class JobManager:
@@ -39,10 +55,24 @@ class JobManager:
     def __init__(self) -> None:
         self._jobs: dict[str, JobState] = {}
 
-    def register(self, run_id: str, *, total: int = 0) -> JobState:
+    def register(self, run_id: str, *, total: int = 0, public: bool = False) -> JobState:
+        """새 job 을 등록한다.
+
+        Args:
+            run_id: run 식별자.
+            total: 총 페르소나 수 (progress 계산용).
+            public: True 이면 익명 사용자도 라이브 SSE 를 구독할 수 있다.
+                게스트 ``/api/try`` mini-run 에서 사용.
+
+        Returns:
+            등록된 :class:`JobState`.
+
+        Raises:
+            ValueError: 동일 ``run_id`` 가 이미 등록된 경우.
+        """
         if run_id in self._jobs:
             raise ValueError(f"run_id already registered: {run_id}")
-        state = JobState(run_id=run_id, total=total)
+        state = JobState(run_id=run_id, total=total, public=public)
         self._jobs[run_id] = state
         return state
 
