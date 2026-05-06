@@ -70,6 +70,35 @@ def test_sse_streams_persona_events(monkeypatch, client: TestClient) -> None:
     assert types[-1] == "completed"
 
 
+def test_completed_event_has_no_report_url_when_report_missing(monkeypatch, client: TestClient) -> None:
+    """run.areport() 가 호출되지 않아 report.md 가 없으면 completed 이벤트에
+    report_url 이 들어 있어선 안 된다."""
+    import json
+
+    from tests.test_e2e import _patch_llm_and_data
+
+    with _patch_llm_and_data(monkeypatch, n=500):
+        _login(client)
+        r = client.post(
+            "/api/runs",
+            json={"scenario_title": "t", "scenario_stimulus": "s", "n": 2, "model": "vllm-qwen"},
+        )
+        run_id = r.json()["run_id"]
+
+        completed: dict | None = None
+        with client.stream("GET", f"/api/runs/{run_id}/events") as stream:
+            for line in stream.iter_lines():
+                if line.startswith("data:"):
+                    payload = json.loads(line.removeprefix("data:").strip())
+                    if payload.get("type") == "completed":
+                        completed = payload
+                        break
+
+    assert completed is not None
+    # report.md 가 없으므로 report_url 키 자체가 없거나 None 이어야 한다 (404 링크 금지).
+    assert completed.get("report_url") is None
+
+
 def test_sse_replay_resumes_after_last_event_id(monkeypatch, client: TestClient) -> None:
     """완료된 run을 Last-Event-ID로 재구독하면 그 이후만 받는다."""
     import json

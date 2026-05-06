@@ -158,10 +158,13 @@ async def create_run(
                 progress_sink=_progress_sink,
                 min_cell_threshold=0,
             )
-            await jm.complete(
-                run_id,
-                payload={"report_url": f"/api/runs/{run_id}/report"},
-            )
+            # report.md 는 별도 ``run.areport()`` 호출이 있어야 생성된다. 현재 라우트는
+            # 그걸 부르지 않으므로 파일이 실제로 존재할 때만 ``report_url`` 을 emit
+            # 한다 — 그렇지 않으면 클라이언트가 죽은 링크를 따라가게 된다.
+            payload: dict[str, Any] = {}
+            if (settings.runs_root / run_id / "report.md").exists():
+                payload["report_url"] = f"/api/runs/{run_id}/report"
+            await jm.complete(run_id, payload=payload)
         except Exception as exc:  # noqa: BLE001
             logger.exception("run %s failed", run_id)
             await jm.fail(run_id, error=f"{type(exc).__name__}: {exc}")
