@@ -54,4 +54,24 @@ describe("useSSE", () => {
     const second = MockEventSource.instances[1];
     expect(second.url).toContain("last_event_id=7");
   });
+
+  it("does not reconnect after terminal completed event even if onerror fires", async () => {
+    renderHook(() => useSSE("/api/runs/r1/events"));
+    const first = MockEventSource.instances[0];
+    act(() => first.emit({ type: "completed" }, "9"));
+    // 서버가 stream 종료하면 브라우저 EventSource가 onerror로 보고 — terminal 이후 재연결 금지.
+    act(() => first.fail());
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(MockEventSource.instances.length).toBe(1);
+  });
+
+  it("does not reconnect after terminal error event even if onerror fires", async () => {
+    renderHook(() => useSSE("/api/runs/r1/events"));
+    const first = MockEventSource.instances[0];
+    act(() => first.emit({ type: "error", message: "boom" }, "3"));
+    act(() => first.fail());
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(MockEventSource.instances.length).toBe(1);
+  });
+
 });
