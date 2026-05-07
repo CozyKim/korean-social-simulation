@@ -22,6 +22,40 @@ def test_post_runs_requires_login(client: TestClient) -> None:
     assert r.status_code == 401
 
 
+def test_post_runs_then_get_run_returns_200(monkeypatch, client: TestClient) -> None:
+    """POST /api/runs 직후 즉시 GET /api/runs/{id} 가 200 + status='starting'.
+
+    배경: 프론트가 202 받자마자 ``/app/runs/{id}`` 로 이동하면 SSR이 GET 을 호출.
+    이 시점에 background ``_runner`` 가 아직 ``Run.create_pending`` 을 부르기 전이면
+    ``scenario.json`` 이 디스크에 없어 404 가 떨어진다. 라우트가 202 반환 전에
+    동기적으로 디렉터리를 선할당하여 이 race 를 닫아야 한다.
+    """
+    from tests.test_e2e import _patch_llm_and_data
+
+    with _patch_llm_and_data(monkeypatch, n=500):
+        _login(client)
+        r = client.post(
+            "/api/runs",
+            json={
+                "scenario_title": "t",
+                "scenario_stimulus": "s",
+                "n": 2,
+                "model": "vllm-qwen",
+            },
+        )
+        assert r.status_code == 202
+        run_id = r.json()["run_id"]
+
+        # 즉시 GET — background 작업 진행 여부와 무관하게 200 이어야 한다.
+        get_res = client.get(f"/api/runs/{run_id}")
+        assert get_res.status_code == 200
+        body = get_res.json()
+        # 시뮬이 진행 중이거나 갓 끝났을 수 있으니 starting/running/completed 모두 허용.
+        assert body["status"] in {"starting", "running", "completed"}
+        assert body["title"] == "t"
+        assert body["n"] == 2
+
+
 def test_post_runs_returns_run_id_immediately(monkeypatch, client: TestClient) -> None:
     from tests.test_e2e import _patch_llm_and_data
 

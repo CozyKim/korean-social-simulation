@@ -239,11 +239,16 @@ async def asimulate(
 
     pending_path: Path | None = None
     if run_id is not None:
+        # ``allow_existing=True`` — FastAPI 라우트가 즉시 응답을 위해
+        # ``Run.create_pending`` 을 미리 호출한 뒤 background ``asimulate`` 가
+        # 다시 호출하는 흐름을 멱등 처리. 기존 scenario.json / partial.jsonl 은
+        # 그대로 보존되고 디렉터리 path만 반환된다.
         pending_path = Run.create_pending(
             root=Path(runs_root),
             scenario=scenario,
             meta=meta,
             run_id=run_id,
+            allow_existing=True,
         )
 
     try:

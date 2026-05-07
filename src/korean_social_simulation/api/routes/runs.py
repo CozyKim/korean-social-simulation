@@ -30,6 +30,7 @@ from korean_social_simulation.api.schemas import (
     CreateRunResponse,
     PatchRunRequest,
 )
+from korean_social_simulation.run import Run
 from korean_social_simulation.scenario import Scenario
 from korean_social_simulation.simulate import asimulate
 
@@ -77,6 +78,26 @@ async def create_run(
         context=body.scenario_context,
         question=body.scenario_question,
         scenario_type=body.scenario_type,
+    )
+
+    # 동기적으로 디렉터리 + scenario.json 을 미리 작성한다. 프론트가 202 받자마자
+    # ``/app/runs/{id}`` 로 이동해 SSR 이 ``GET /api/runs/{id}`` 를 호출할 때
+    # background ``_runner`` 의 ``asimulate`` 가 아직 ``Run.create_pending`` 까지
+    # 도달하지 않아 ``scenario.json`` 이 없는 race(=404) 를 닫는다. 이후 asimulate
+    # 가 ``allow_existing=True`` 로 멱등 처리한다.
+    pre_meta: dict[str, Any] = {
+        "model": body.model,
+        "n": body.n,
+        "seed": body.seed,
+        "filters": body.filters or {},
+        "concurrency": body.concurrency,
+    }
+    Run.create_pending(
+        root=settings.runs_root,
+        scenario=scenario,
+        meta=pre_meta,
+        run_id=run_id,
+        status="starting",
     )
 
     async def _progress_sink(row: dict[str, Any]) -> None:

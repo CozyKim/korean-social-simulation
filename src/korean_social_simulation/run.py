@@ -100,6 +100,8 @@ class Run:
         scenario: Scenario,
         meta: dict[str, Any],
         run_id: str,
+        allow_existing: bool = False,
+        status: str = "running",
     ) -> Path:
         """시뮬 시작 시점에 디렉터리만 미리 만들고 partial.jsonl 빈 파일 둔다.
 
@@ -112,16 +114,32 @@ class Run:
             scenario: 입력 시나리오.
             meta: 재현성·LLM 정보.
             run_id: 명시적 ID. job manager가 미리 발급한 uuid.
+            allow_existing: ``True`` 이면 같은 ``run_id`` 디렉터리가 이미 있을 때
+                덮어쓰지 않고 기존 파일(특히 ``reactions.partial.jsonl`` 누적 행과
+                ``scenario.json`` status)을 그대로 보존한 채 path만 반환한다.
+                FastAPI 라우트가 미리 ``create_pending`` 을 부른 뒤 background
+                ``asimulate(run_id=...)`` 가 다시 호출하는 흐름의 멱등 보장용.
+            status: ``scenario.json`` 에 기록할 초기 상태. 기본 "running".
+                라우트는 즉시 응답을 위해 "starting" 으로 사전 생성할 수 있다.
 
         Returns:
-            생성된 디렉터리 경로.
+            생성된(또는 기존) 디렉터리 경로.
 
         Raises:
-            FileExistsError: 같은 run_id 디렉터리가 이미 있을 때.
+            FileExistsError: 같은 run_id 디렉터리가 이미 있고 ``allow_existing``
+                이 ``False`` 일 때.
         """
         path = Path(root) / run_id
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.mkdir(exist_ok=False)
+        try:
+            path.mkdir(exist_ok=False)
+        except FileExistsError:
+            if not allow_existing:
+                raise
+            # 기존 디렉터리가 있고 멱등 모드 — scenario.json/partial.jsonl 등
+            # 누적 산출물 보호를 위해 기존 파일은 그대로 두고 path만 반환한다.
+            (path / "charts").mkdir(exist_ok=True)
+            return path
         (path / "charts").mkdir(exist_ok=True)
         (path / "scenario.json").write_text(
             json.dumps(
@@ -129,7 +147,7 @@ class Run:
                     "scenario": scenario.model_dump(),
                     "meta": meta,
                     "run_id": run_id,
-                    "status": "running",
+                    "status": status,
                     "public": False,
                     "created_at": datetime.now(UTC).isoformat(),
                 },
