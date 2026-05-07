@@ -99,8 +99,18 @@ def run(
     generated = 0
     skipped = 0
     failed = 0
+    consecutive_fails = 0
+    MAX_CONSECUTIVE_FAILS = 5
     for key in iter_avatar_keys():
-        if limit is not None and generated >= limit:
+        # ``limit`` 은 "시도 카운트" 로 해석 — generated+failed 합산 시 limit 도달이면 종료.
+        # (rate limit / 토큰 소진 시 모든 strata 가 fail 인 상태에서 무한 반복 회피.)
+        if limit is not None and (generated + failed) >= limit:
+            break
+        if consecutive_fails >= MAX_CONSECUTIVE_FAILS:
+            print(
+                f"[abort] {consecutive_fails} 연속 fail — codex usage limit / rate limit 의심. 중단.",
+                file=sys.stderr,
+            )
             break
         target = out_dir / f"{key}.webp"
         if target.exists() and not force:
@@ -110,12 +120,14 @@ def run(
             raw = backend.generate(prompt=_prompt_for(key), size="1024x1024")
         except Exception as exc:  # noqa: BLE001 — single-strata fail isolation
             failed += 1
+            consecutive_fails += 1
             print(f"[skip] {key}: {type(exc).__name__}: {exc}", file=sys.stderr)
             continue
         if raw.startswith(b"\x89PNG"):
             raw = to_webp(raw)
         target.write_bytes(raw)
         generated += 1
+        consecutive_fails = 0
     if failed:
         print(f"[summary] generated={generated} skipped={skipped} failed={failed}", file=sys.stderr)
     return GenerateSummary(generated=generated, skipped=skipped)
