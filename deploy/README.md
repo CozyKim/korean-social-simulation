@@ -1,0 +1,99 @@
+# KSS 배포
+
+## 백엔드 (Fly.io)
+
+### 1회 셋업
+
+```bash
+flyctl launch --config deploy/fly.toml --no-deploy --copy-config
+flyctl volumes create kss_data --size 5 --region nrt
+flyctl secrets set \
+  KSS_OWNER_TOKEN=$(openssl rand -hex 32) \
+  KSS_COOKIE_SECRET=$(openssl rand -hex 32) \
+  VERCEL_REVALIDATE_HOOK_URL=https://kss.vercel.app/api/revalidate \
+  VERCEL_REVALIDATE_SECRET=$(openssl rand -hex 32) \
+  VLLM_BASE_URL=http://your-vllm-host:8000/v1 \
+  VLLM_API_KEY=EMPTY
+```
+
+`VERCEL_REVALIDATE_SECRET` 은 Vercel 측 `REVALIDATE_SECRET` 과 동일 값을 써야 인증 통과 (참고: `web/app/api/revalidate/route.ts`).
+
+### codex OAuth 토큰 sync
+
+LLM 호출용 codex OAuth 토큰은 본인 노트북에서 발급된 것을 백엔드 영속 볼륨에 한 번 동기화한다 (사이트 로그인 토큰과는 별개).
+
+```bash
+# 1) 본인 노트북에서:
+uv run python -m korean_social_simulation.llm.codex_oauth login
+
+# 2) 발급된 auth.json 을 fly volume 에 업로드:
+flyctl ssh sftp shell
+> put ~/.korean_social_simulation/codex_oauth/auth.json /data/codex_oauth/auth.json
+> exit
+flyctl ssh console -C "chmod 600 /data/codex_oauth/auth.json"
+```
+
+### 배포
+
+```bash
+flyctl deploy --config deploy/fly.toml --dockerfile deploy/Dockerfile
+```
+
+### 헬스체크
+
+```bash
+curl https://kss-api.fly.dev/api/health
+# {"status":"ok","vllm":"up","active_jobs":0}
+```
+
+## 프론트엔드 (Vercel)
+
+`web/` 디렉터리만 배포한다.
+
+```bash
+cd web
+vercel link
+vercel env add NEXT_PUBLIC_API_BASE_URL  # https://kss-api.fly.dev
+vercel env add NEXT_PUBLIC_FEATURED_RUN_ID  # 선택, 대표 run id
+vercel env add REVALIDATE_SECRET  # 백엔드의 VERCEL_REVALIDATE_SECRET 와 같은 값
+vercel deploy --prod
+```
+
+## 자산 사전 생성
+
+랜딩 hero, 카테고리 아이콘, 238장 페르소나 아바타는 한 번 생성해 git 에 커밋한다.
+
+```bash
+export OPENAI_API_KEY=sk-...
+uv sync --extra image
+uv run python -m scripts.generate_avatars        # 238장 (이미 있으면 skip)
+uv run python -m scripts.generate_illustrations  # hero/og/favicon/카테고리 5종
+git add web/public/avatars web/public/illustrations
+git commit -m "assets: avatars + illustrations 일괄 생성"
+```
+
+자산 미생성 상태로도 사이트는 동작 — `<img onError>` fallback 으로 깨진 이미지가 노출되지 않는다 (Phase E codex fix).
+
+## 운영 환경변수 표
+
+| 이름 | 위치 | 설명 |
+|---|---|---|
+| `KSS_OWNER_TOKEN` | Fly secret | 본인 사이트 로그인 시크릿 |
+| `KSS_COOKIE_SECRET` | Fly secret | 쿠키 서명 키 (itsdangerous) |
+| `KSS_COOKIE_SAMESITE` | Fly env | `none` (cross-site Vercel↔Fly) |
+| `KSS_COOKIE_SECURE` | Fly env | `true` (production HTTPS) |
+| `KSS_TRUST_PROXY_HEADERS` | Fly env | `true` (Fly proxy 신뢰) |
+| `VLLM_BASE_URL` | Fly secret | 게스트 mini-run 백엔드 |
+| `VLLM_API_KEY` | Fly secret | 보통 `EMPTY` |
+| `VERCEL_REVALIDATE_HOOK_URL` | Fly secret | `https://kss.vercel.app/api/revalidate` |
+| `VERCEL_REVALIDATE_SECRET` | Fly secret | Vercel `REVALIDATE_SECRET` 과 동일 |
+| `KOREAN_SOCIAL_SIMULATION_CODEX_OAUTH_AUTH_PATH` | Fly env | `/data/codex_oauth/auth.json` |
+| `KSS_RUNS_ROOT` | Fly env | `/data/runs` |
+| `KSS_SCENARIOS_ROOT` | Fly env | `/data/scenarios` |
+| `NEXT_PUBLIC_API_BASE_URL` | Vercel env | `https://kss-api.fly.dev` |
+| `NEXT_PUBLIC_FEATURED_RUN_ID` | Vercel env | 대표 run id (선택) |
+| `REVALIDATE_SECRET` | Vercel env | Fly `VERCEL_REVALIDATE_SECRET` 과 동일 |
+
+## 단일 인스턴스 제약
+
+JobManager 가 in-memory 라 백엔드 워커 1개로만 운영. `min_machines_running = 1` 유지. 다중 인스턴스 운영을 원하면 후속 Redis-based JobManager 마이그레이션 필요 — spec §13 항목.

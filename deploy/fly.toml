@@ -1,0 +1,45 @@
+app = "kss-api"
+primary_region = "nrt"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  KOREAN_SOCIAL_SIMULATION_CODEX_OAUTH_AUTH_PATH = "/data/codex_oauth/auth.json"
+  KSS_RUNS_ROOT = "/data/runs"
+  KSS_SCENARIOS_ROOT = "/data/scenarios"
+  KSS_COOKIE_SAMESITE = "none"
+  KSS_COOKIE_SECURE = "true"
+  KSS_TRUST_PROXY_HEADERS = "true"
+
+[[services]]
+  internal_port = 8001
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+[[services.http_checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "get"
+  path = "/api/health"
+
+[[mounts]]
+  source = "kss_data"
+  destination = "/data"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 1024
