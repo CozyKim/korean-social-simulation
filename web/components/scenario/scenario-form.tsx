@@ -5,20 +5,29 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CreateRunRequest } from "@/lib/types";
 
+export interface ScenarioFormInitialValues {
+  scenario_title?: string;
+  scenario_stimulus?: string;
+  scenario_context?: string | null;
+  scenario_question?: string | null;
+  scenario_type?: string;
+}
+
 interface ScenarioFormProps {
   models: string[];
   maxN: number;
   defaultModel?: string;
+  initialValues?: ScenarioFormInitialValues;
   onSubmit: (req: CreateRunRequest) => void;
   submitting?: boolean;
 }
 
-export function ScenarioForm({ models, maxN, defaultModel, onSubmit, submitting }: ScenarioFormProps) {
-  const [title, setTitle] = useState("");
-  const [stimulus, setStimulus] = useState("");
-  const [context, setContext] = useState("");
-  const [question, setQuestion] = useState("");
-  const [type, setType] = useState("other");
+export function ScenarioForm({ models, maxN, defaultModel, initialValues, onSubmit, submitting }: ScenarioFormProps) {
+  const [title, setTitle] = useState(initialValues?.scenario_title ?? "");
+  const [stimulus, setStimulus] = useState(initialValues?.scenario_stimulus ?? "");
+  const [context, setContext] = useState(initialValues?.scenario_context ?? "");
+  const [question, setQuestion] = useState(initialValues?.scenario_question ?? "");
+  const [type, setType] = useState(initialValues?.scenario_type ?? "other");
   const [n, setN] = useState(50);
   const [model, setModel] = useState(defaultModel ?? models[0] ?? "");
   const [seed, setSeed] = useState(42);

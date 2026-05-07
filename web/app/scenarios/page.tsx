@@ -31,6 +31,7 @@ export default async function ScenariosPage() {
               title={s.title}
               scenarioType={s.scenario_type}
               stimulusPreview=""
+              href={`/app/scenarios/new?template=${encodeURIComponent(s.filename)}`}
             />
           ))}
         </div>
