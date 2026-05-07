@@ -91,7 +91,10 @@ async def stream_run_events(
         meta = _load_scenario_meta(settings.runs_root, run_id) or {}
         if not _is_visible(meta, is_owner):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-        return EventSourceResponse(_live_stream(jm, run_id, last_event_id))
+        # last_event_id None → 0 보정. 늦게 구독한 클라이언트가 이미 발행된
+        # persona_done 이벤트들을 backfill 받도록 한다 (``JobManager.subscribe`` 는
+        # ``last_event_id is None`` 일 때 backfill 을 건너뛰기 때문).
+        return EventSourceResponse(_live_stream(jm, run_id, last_event_id if last_event_id is not None else 0))
 
     # 완료/실패된 owner job 또는 in-memory 등록 자체가 없는 경우 — 디스크 replay.
     run_path = resolve_run_path(settings.runs_root, run_id)

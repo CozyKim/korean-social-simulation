@@ -260,6 +260,92 @@ def test_sse_header_overrides_query_last_event_id(monkeypatch, client: TestClien
     assert all(e["event_id"] >= 4 for e in persona_events), persona_events
 
 
+def test_active_owner_run_fresh_subscribe_backfills_existing_events(client: TestClient) -> None:
+    """진행 중 owner run 에 늦게 구독한 클라이언트는 이미 발행된 이벤트를 backfill 받아야 한다.
+
+    배경: ``stream.py`` 의 owner active 분기가 ``last_event_id`` 를 그대로 ``subscribe`` 에
+    넘기는데, fresh subscribe (헤더/쿼리 없음) 시 ``last_event_id=None`` 이면
+    ``JobManager.subscribe`` 가 backfill 을 건너뛴다. 그 결과 이미 ``persona_done`` 이
+    여러 건 발행된 활성 run 을 늦게 연 사용자는 진행 중인 N개를 받지 못한다.
+
+    검증: ``JobManager`` 에 직접 register + publish 로 이벤트 N개를 미리 쌓고,
+    ``GET /events`` 로 fresh subscribe → backfill 로 N개 모두 수신.
+    """
+    import asyncio
+    import json
+    import threading
+    import time
+
+    from korean_social_simulation.run import Run
+    from korean_social_simulation.scenario import Scenario
+
+    _login(client)
+
+    app = client.app
+    runs_root = app.state.settings.runs_root
+    jm = app.state.job_manager
+    run_id = "active-backfill-rid"
+
+    # 디스크에 owner-소유(public=False) scenario.json 미리 생성. _is_visible 통과용.
+    Run.create_pending(
+        root=runs_root,
+        scenario=Scenario(title="t", stimulus="s"),
+        meta={"model": "vllm-qwen", "n": 3, "seed": 42, "filters": {}, "concurrency": 1},
+        run_id=run_id,
+        status="starting",
+    )
+
+    # JobManager 에 active 등록 + publish 3건 (status=STARTING → 첫 publish 후 RUNNING).
+    # status 를 RUNNING 으로 유지한 채 stream 을 열어야 owner active 분기를 탄다.
+    jm.register(run_id, total=3)
+    loop = asyncio.new_event_loop()
+    try:
+        for i in range(3):
+            loop.run_until_complete(
+                jm.publish(
+                    run_id,
+                    {
+                        "type": "persona_done",
+                        "index": i,
+                        "total": 3,
+                        "persona": {"sex": "남", "age": 30, "province": "서울특별시"},
+                        "avatar_key": "male_30_seoul",
+                        "reaction": {"stance": "positive", "intensity": 4, "action_intent": "purchase", "quote": f"q{i}"},
+                    },
+                )
+            )
+    finally:
+        loop.close()
+
+    # 별도 thread 에서 짧은 delay 후 complete 발행 — stream 이 backfill 을 모두
+    # 소비한 뒤 종료할 수 있도록. 동기 TestClient 에서 stream 을 끊기 위한 패턴.
+    def _delayed_complete() -> None:
+        time.sleep(0.5)
+        loop2 = asyncio.new_event_loop()
+        try:
+            loop2.run_until_complete(jm.complete(run_id))
+        finally:
+            loop2.close()
+
+    threading.Thread(target=_delayed_complete, daemon=True).start()
+
+    # fresh subscribe — Last-Event-ID 헤더/쿼리 없음. owner active 분기가 backfill 안 하면
+    # persona_done 이벤트는 0건이고 completed 만 받게 된다.
+    received: list[dict] = []
+    with client.stream("GET", f"/api/runs/{run_id}/events") as stream:
+        for line in stream.iter_lines():
+            if line.startswith("data:"):
+                payload = json.loads(line.removeprefix("data:").strip())
+                received.append(payload)
+                if payload.get("type") in {"completed", "error"}:
+                    break
+
+    persona_events = [e for e in received if e.get("type") == "persona_done"]
+    # backfill 이 적용되면 3건 모두 받아야 한다. 미적용 시 0건.
+    assert len(persona_events) == 3, f"expected 3 backfilled persona_done, got {len(persona_events)}: {received}"
+    assert any(e.get("type") == "completed" for e in received)
+
+
 def test_completed_owner_run_uses_disk_replay_not_in_memory(monkeypatch, client: TestClient) -> None:
     """완료된 owner run 을 재구독하면 in-memory deque(maxlen=1000) backfill 이 아니라
     디스크 parquet replay 분기로 가야 한다.
