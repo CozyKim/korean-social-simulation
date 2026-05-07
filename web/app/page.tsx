@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { LiveFeed } from "@/components/live-feed/live-feed";
 import { FEATURED_RUN_ID } from "@/lib/featured";
+import { HeroImage } from "@/components/hero-image";
 
 export const dynamic = "force-static";
 
@@ -9,11 +10,7 @@ export default function HomePage() {
   return (
     <main>
       <section className="relative isolate overflow-hidden border-b border-zinc-800 px-6 py-16">
-        <img
-          src="/illustrations/hero.webp"
-          alt=""
-          className="absolute inset-0 -z-10 h-full w-full object-cover opacity-30"
-        />
+        <HeroImage />
         <div className="mx-auto max-w-3xl">
           <h1 className="text-balance text-5xl font-bold tracking-tight">
             한국인 100만 페르소나에게 묻습니다.

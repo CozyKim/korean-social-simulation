@@ -48,6 +48,9 @@ export function PersonaCard({ persona, avatarKey, reaction }: PersonaCardProps) 
           alt=""
           loading="lazy"
           className="h-10 w-10 shrink-0 rounded-full bg-zinc-800 object-cover"
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).style.display = "none";
+          }}
         />
       )}
       <div className="min-w-0 flex-1">
