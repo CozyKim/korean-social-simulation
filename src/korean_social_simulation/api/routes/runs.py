@@ -223,10 +223,14 @@ async def patch_run(
     write_run_meta(run_path, meta)
     if settings.vercel_revalidate_hook_url:
         try:
+            headers: dict[str, str] = {}
+            if settings.vercel_revalidate_secret:
+                headers["Authorization"] = f"Bearer {settings.vercel_revalidate_secret}"
             async with httpx.AsyncClient(timeout=5.0) as h:
                 await h.post(
                     settings.vercel_revalidate_hook_url,
                     json={"path": f"/runs/{run_id}"},
+                    headers=headers,
                 )
         except Exception as exc:  # noqa: BLE001
             logger.warning("revalidate hook failed: %s", exc)

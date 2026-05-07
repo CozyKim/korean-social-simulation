@@ -41,6 +41,7 @@ class Settings:
     cors_origins: tuple[str, ...]
     vllm_base_url: str | None
     vercel_revalidate_hook_url: str | None
+    vercel_revalidate_secret: str = ""
     cookie_max_age_seconds: int = 60 * 60 * 24 * 30  # 30일
     cookie_samesite: CookieSameSite = "lax"
     cookie_secure: bool = False
@@ -63,6 +64,7 @@ class Settings:
             cors_origins=tuple(o.strip() for o in origins_raw.split(",") if o.strip()),
             vllm_base_url=os.environ.get("VLLM_BASE_URL"),
             vercel_revalidate_hook_url=os.environ.get("VERCEL_REVALIDATE_HOOK_URL"),
+            vercel_revalidate_secret=os.environ.get("VERCEL_REVALIDATE_SECRET", ""),
             cookie_samesite=_parse_samesite(os.environ.get("KSS_COOKIE_SAMESITE")),
             cookie_secure=_parse_bool(os.environ.get("KSS_COOKIE_SECURE")),
             trust_proxy_headers=_parse_bool(os.environ.get("KSS_TRUST_PROXY_HEADERS")),
