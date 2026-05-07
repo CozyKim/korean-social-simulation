@@ -27,6 +27,8 @@ export function LiveFeed({ runId, maxCards = 50 }: LiveFeedProps) {
     let progress = 0;
     let positiveCount = 0;
     let intensitySum = 0;
+    let intensityCount = 0;
+    let failCount = 0;
     const items: PersonaItem[] = [];
     for (const e of events) {
       if (e.type === "persona_done") {
@@ -38,18 +40,27 @@ export function LiveFeed({ runId, maxCards = 50 }: LiveFeedProps) {
         });
         total = e.total;
         progress += 1;
-        if (e.reaction.stance === "positive") positiveCount += 1;
-        intensitySum += e.reaction.intensity;
+        const r = e.reaction as typeof e.reaction & { error?: string | null };
+        const failed = !!r.error || (!r.stance && !r.quote);
+        if (failed) {
+          failCount += 1;
+        } else {
+          if (r.stance === "positive") positiveCount += 1;
+          if (typeof r.intensity === "number") {
+            intensitySum += r.intensity;
+            intensityCount += 1;
+          }
+        }
       } else if (e.type === "started" && typeof e.total === "number") {
         total = e.total;
       }
     }
-    // 백엔드 emission 이 stats 필드를 채우지 않을 수 있으므로 클라이언트에서 누적 계산.
-    // fail_rate 는 클라이언트가 알 수 없으므로 0 유지 (server-only metric).
+    // 클라이언트 누적 계산 — 성공 카운트 분모로 stance 비율, fail 카운트로 fail_rate.
+    const successCount = progress - failCount;
     const stats = {
-      positive_pct: progress > 0 ? positiveCount / progress : 0,
-      avg_intensity: progress > 0 ? intensitySum / progress : 0,
-      fail_rate: 0,
+      positive_pct: successCount > 0 ? positiveCount / successCount : 0,
+      avg_intensity: intensityCount > 0 ? intensitySum / intensityCount : 0,
+      fail_rate: progress > 0 ? failCount / progress : 0,
     };
     return { items: items.slice(-maxCards).reverse(), stats, total, progress };
   }, [events, maxCards]);

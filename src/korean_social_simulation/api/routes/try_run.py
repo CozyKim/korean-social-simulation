@@ -125,6 +125,7 @@ async def try_run(
                     "stance": row.get("stance"),
                     "intensity": row.get("intensity"),
                     "quote": row.get("quote"),
+                    "error": row.get("error"),
                 },
             },
         )

@@ -123,6 +123,7 @@ async def create_run(
                     "quote": row.get("quote"),
                     "key_drivers": row.get("key_drivers"),
                     "concerns": row.get("concerns"),
+                    "error": row.get("error"),
                 },
             },
         )

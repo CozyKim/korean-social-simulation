@@ -2,6 +2,7 @@
 
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch, ApiError } from "@/lib/api";
@@ -9,6 +10,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
+  const qc = useQueryClient();
   const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -19,6 +21,7 @@ function LoginForm() {
     setError(null);
     try {
       await apiFetch("/api/auth/login", { method: "POST", body: JSON.stringify({ token }) });
+      await qc.invalidateQueries({ queryKey: ["me"] });
       router.replace(params.get("from") ?? "/app");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) setError("토큰이 일치하지 않습니다.");

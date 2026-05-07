@@ -6,7 +6,7 @@ export function middleware(req: NextRequest) {
   const cookie = req.cookies.get("kss_owner");
   if (!cookie) {
     const loginUrl = new URL("/app/login", req.url);
-    loginUrl.searchParams.set("from", req.nextUrl.pathname);
+    loginUrl.searchParams.set("from", req.nextUrl.pathname + req.nextUrl.search);
     return NextResponse.redirect(loginUrl);
   }
   return NextResponse.next();

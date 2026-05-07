@@ -10,12 +10,13 @@ interface PersonaCardProps {
   persona: { sex: string; age: number; province: string };
   avatarKey: string | null;
   reaction: {
-    stance: "positive" | "negative" | "neutral" | "mixed";
-    intensity: number;
-    action_intent?: string;
-    quote: string;
+    stance?: "positive" | "negative" | "neutral" | "mixed" | null;
+    intensity?: number | null;
+    action_intent?: string | null;
+    quote?: string | null;
     key_drivers?: string[];
     concerns?: string[];
+    error?: string | null;
   };
 }
 
@@ -40,8 +41,9 @@ export function PersonaCard({ persona, avatarKey, reaction }: PersonaCardProps) 
   const provinceShort = persona.province.replace(/(특별시|광역시|특별자치시|특별자치도|도)$/, "");
   const drivers = reaction.key_drivers ?? [];
   const concerns = reaction.concerns ?? [];
+  const failed = !!reaction.error || (!reaction.stance && !reaction.quote);
   return (
-    <Card className="flex gap-3 p-3">
+    <Card className={`flex gap-3 p-3 ${failed ? "opacity-50" : ""}`}>
       {avatarKey && (
         <img
           src={avatarUrlForKey(avatarKey)}
@@ -56,15 +58,26 @@ export function PersonaCard({ persona, avatarKey, reaction }: PersonaCardProps) 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 text-xs text-zinc-400">
           <span>{`${SEX_KO[persona.sex] ?? persona.sex} ${persona.age} ${provinceShort}`}</span>
-          <Badge
-            variant={STANCE_VARIANT[reaction.stance]}
-            aria-label={`${STANCE_KO[reaction.stance]} ${reaction.intensity}`}
-          >
-            {STANCE_KO[reaction.stance]} · {reaction.intensity}
-          </Badge>
+          {failed ? (
+            <Badge variant="negative" aria-label="실패">실패</Badge>
+          ) : reaction.stance ? (
+            <Badge
+              variant={STANCE_VARIANT[reaction.stance]}
+              aria-label={`${STANCE_KO[reaction.stance]} ${reaction.intensity ?? ""}`}
+            >
+              {STANCE_KO[reaction.stance]}
+              {reaction.intensity != null ? ` · ${reaction.intensity}` : ""}
+            </Badge>
+          ) : null}
           {reaction.action_intent && <span className="text-zinc-500">{reaction.action_intent}</span>}
         </div>
-        <p className="mt-1 text-sm leading-relaxed text-zinc-100">{reaction.quote}</p>
+        {failed ? (
+          <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+            {reaction.error ?? "(LLM 응답 실패)"}
+          </p>
+        ) : (
+          <p className="mt-1 text-sm leading-relaxed text-zinc-100">{reaction.quote}</p>
+        )}
         {(drivers.length > 0 || concerns.length > 0) && (
           <button
             type="button"

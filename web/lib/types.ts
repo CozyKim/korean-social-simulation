@@ -54,12 +54,13 @@ export type SseEvent =
       persona: { sex: string; age: number; province: string };
       avatar_key: string | null;
       reaction: {
-        stance: "positive" | "negative" | "neutral" | "mixed";
-        intensity: number;
-        action_intent?: string;
-        quote: string;
+        stance?: "positive" | "negative" | "neutral" | "mixed" | null;
+        intensity?: number | null;
+        action_intent?: string | null;
+        quote?: string | null;
         key_drivers?: string[];
         concerns?: string[];
+        error?: string | null;
       };
       stats?: { positive_pct: number; avg_intensity: number; fail_rate: number };
     }
