@@ -22,6 +22,11 @@ interface PersonaItem {
 export function LiveFeed({ runId, maxCards = 50 }: LiveFeedProps) {
   const { events, connected, error } = useSSE(`/api/runs/${runId}/events`);
 
+  const errEvent = events.find((e) => e.type === "error") as
+    | (Extract<SseEvent, { type: "error" }>)
+    | undefined;
+  const completed = events.some((e) => e.type === "completed");
+
   const { items, stats, total, progress } = useMemo(() => {
     let total = 0;
     let progress = 0;
@@ -68,9 +73,19 @@ export function LiveFeed({ runId, maxCards = 50 }: LiveFeedProps) {
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
       <div className="space-y-2">
-        {error && <div className="text-sm text-amber-400">{error}</div>}
-        {!connected && items.length === 0 && (
+        {error && !errEvent && !completed && (
+          <div className="text-sm text-amber-400">{error}</div>
+        )}
+        {errEvent && (
+          <div className="rounded border border-red-700 bg-red-900/30 p-3 text-sm text-red-300">
+            오류: {errEvent.error}
+          </div>
+        )}
+        {!connected && items.length === 0 && !errEvent && !completed && (
           <div className="text-sm text-zinc-500">연결 중…</div>
+        )}
+        {completed && items.length === 0 && !errEvent && (
+          <div className="text-sm text-zinc-500">완료됐지만 표시할 데이터가 없습니다.</div>
         )}
         <AnimatePresence initial={false}>
           {items.map((item) => (
