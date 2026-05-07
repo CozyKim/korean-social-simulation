@@ -96,7 +96,17 @@ async def stream_run_events(
         # ``last_event_id is None`` 일 때 backfill 을 건너뛰기 때문).
         return EventSourceResponse(_live_stream(jm, run_id, last_event_id if last_event_id is not None else 0))
 
-    # 완료/실패된 owner job 또는 in-memory 등록 자체가 없는 경우 — 디스크 replay.
+    # 실패한 owner job: ``simulate.py`` 가 100% fail 시 RuntimeError 를 던져
+    # ``reactions.parquet`` 변환 전에 종료되므로, 디스크 replay 가 깨진 메시지만 보여준다.
+    # 대신 in-memory deque 의 persona_done 이벤트들 (각 fail 도 ``error`` 필드로 emit) 을
+    # backfill 해 사용자가 어떤 페르소나가 어떻게 실패했는지 볼 수 있도록 한다.
+    if job is not None and job.status == JobStatus.FAILED:
+        meta = _load_scenario_meta(settings.runs_root, run_id) or {}
+        if not _is_visible(meta, is_owner):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        return EventSourceResponse(_live_stream(jm, run_id, last_event_id if last_event_id is not None else 0))
+
+    # 완료된 owner job 또는 in-memory 등록 자체가 없는 경우 — 디스크 replay.
     run_path = resolve_run_path(settings.runs_root, run_id)
     meta = _load_scenario_meta(settings.runs_root, run_id)
     if meta is None or not _is_visible(meta, is_owner):

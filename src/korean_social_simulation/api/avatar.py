@@ -12,10 +12,14 @@ from typing import Any
 from korean_social_simulation.data.sampler import age_band
 
 # 데이터셋이 쓰는 한국어 sex 라벨 → 자산 prefix 매핑.
+# Nemotron-Personas-Korea 는 ``남자``/``여자`` 형태로 sex 를 보내고, 다른 데이터셋이나
+# 옛 fixture 는 ``남``/``여`` 형태일 수 있다. 둘 다 같은 canonical key 로 매핑한다.
 # 알 수 없는 값(빈 문자열, 'X' 등) 은 None 을 반환해 클라이언트가 fallback 처리.
 _SEX_TO_CANONICAL: dict[str, str] = {
     "남": "male",
     "여": "female",
+    "남자": "male",
+    "여자": "female",
 }
 
 

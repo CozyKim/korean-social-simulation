@@ -3,6 +3,8 @@ const SEX_CANONICAL: Record<string, string> = {
   male: "male",
   여: "female",
   남: "male",
+  여자: "female",
+  남자: "male",
 };
 
 export function ageToBand(age: number): string {

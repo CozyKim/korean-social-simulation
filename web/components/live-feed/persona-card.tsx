@@ -6,6 +6,15 @@ import { avatarUrlForKey } from "@/lib/avatar";
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
+const SEX_GRADIENT: Record<string, string> = {
+  female: "from-pink-700 to-rose-500",
+  male: "from-sky-700 to-cyan-500",
+  여: "from-pink-700 to-rose-500",
+  남: "from-sky-700 to-cyan-500",
+  여자: "from-pink-700 to-rose-500",
+  남자: "from-sky-700 to-cyan-500",
+};
+
 interface PersonaCardProps {
   persona: { sex: string; age: number; province: string };
   avatarKey: string | null;
@@ -20,7 +29,14 @@ interface PersonaCardProps {
   };
 }
 
-const SEX_KO: Record<string, string> = { female: "여", male: "남", 여: "여", 남: "남" };
+const SEX_KO: Record<string, string> = {
+  female: "여",
+  male: "남",
+  여: "여",
+  남: "남",
+  여자: "여",
+  남자: "남",
+};
 
 const STANCE_KO: Record<string, string> = {
   positive: "긍정",
@@ -38,23 +54,33 @@ const STANCE_VARIANT: Record<string, "positive" | "negative" | "neutral" | "mixe
 
 export function PersonaCard({ persona, avatarKey, reaction }: PersonaCardProps) {
   const [open, setOpen] = useState(false);
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const provinceShort = persona.province.replace(/(특별시|광역시|특별자치시|특별자치도|도)$/, "");
   const drivers = reaction.key_drivers ?? [];
   const concerns = reaction.concerns ?? [];
   const failed = !!reaction.error || (!reaction.stance && !reaction.quote);
+  const sexKo = SEX_KO[persona.sex] ?? "?";
+  const gradient = SEX_GRADIENT[persona.sex] ?? "from-zinc-700 to-zinc-500";
   return (
     <Card className={`flex gap-3 p-3 ${failed ? "opacity-50" : ""}`}>
-      {avatarKey && (
-        <img
-          src={avatarUrlForKey(avatarKey)}
-          alt=""
-          loading="lazy"
-          className="h-10 w-10 shrink-0 rounded-full bg-zinc-800 object-cover"
-          onError={(e) => {
-            (e.currentTarget as HTMLImageElement).style.display = "none";
-          }}
-        />
-      )}
+      <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-zinc-800">
+        {avatarKey && !avatarFailed ? (
+          <img
+            src={avatarUrlForKey(avatarKey)}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-cover"
+            onError={() => setAvatarFailed(true)}
+          />
+        ) : (
+          <div
+            className={`flex h-full w-full items-center justify-center bg-gradient-to-br text-sm font-bold text-white ${gradient}`}
+            aria-label={`${sexKo} ${persona.age}`}
+          >
+            {sexKo}
+          </div>
+        )}
+      </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 text-xs text-zinc-400">
           <span>{`${SEX_KO[persona.sex] ?? persona.sex} ${persona.age} ${provinceShort}`}</span>
