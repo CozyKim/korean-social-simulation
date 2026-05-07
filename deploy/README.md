@@ -84,15 +84,18 @@ dev 환경은 `NEXT_PUBLIC_API_BASE_URL=http://localhost:8001` 그대로 두면
 ## 자산 사전 생성
 
 랜딩 hero, 카테고리 아이콘, 238장 페르소나 아바타는 한 번 생성해 git 에 커밋한다.
+기본 backend 는 codex CLI (ChatGPT 컨슈머 백엔드, OAuth) — spec §5.3 정책.
 
 ```bash
-export OPENAI_API_KEY=sk-...
+codex login                                       # 한 번
 uv sync --extra image
-uv run python -m scripts.generate_avatars        # 238장 (이미 있으면 skip)
-uv run python -m scripts.generate_illustrations  # hero/og/favicon/카테고리 5종
+uv run python -m scripts.generate_avatars        # 238장 (이미 있으면 skip, ~3-4시간)
+uv run python -m scripts.generate_illustrations  # hero/og/favicon/카테고리 8종 (~6분)
 git add web/public/avatars web/public/illustrations
 git commit -m "assets: avatars + illustrations 일괄 생성"
 ```
+
+대안: `OPENAI_API_KEY` 가 있으면 `scripts/_image_backend.py` 의 `OpenAIImageBackend` 사용 가능.
 
 자산 미생성 상태로도 사이트는 동작 — `<img onError>` fallback 으로 깨진 이미지가 노출되지 않는다 (Phase E codex fix).
 

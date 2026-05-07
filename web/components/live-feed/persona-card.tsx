@@ -71,6 +71,9 @@ export function PersonaCard({ persona, avatarKey, reaction }: PersonaCardProps) 
             loading="lazy"
             className="h-full w-full object-cover"
             onError={() => setAvatarFailed(true)}
+            onLoad={(e) => {
+              if (e.currentTarget.naturalWidth === 0) setAvatarFailed(true);
+            }}
           />
         ) : (
           <div

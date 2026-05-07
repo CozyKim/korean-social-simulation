@@ -299,16 +299,23 @@ npm run lint
 
 ## 자산 사전 생성 (랜딩/카테고리 아이콘 + 238장 페르소나 아바타)
 
+기본 backend 는 codex CLI (ChatGPT 컨슈머 백엔드, OAuth). `codex login` 으로 한 번 인증해 두면
+추가 환경변수 없이 동작.
+
 ```bash
-export OPENAI_API_KEY=sk-...
+codex login                                       # 한 번
 uv sync --extra image
-uv run python -m scripts.generate_avatars        # 238장 (멱등)
-uv run python -m scripts.generate_illustrations  # hero/og/favicon/카테고리 5종
+uv run python -m scripts.generate_avatars        # 238장 (멱등, ~3-4시간)
+uv run python -m scripts.generate_illustrations  # hero/og/favicon/카테고리 8종 (~6분)
 git add web/public/avatars web/public/illustrations
 git commit -m "assets: avatars + illustrations 일괄 생성"
 ```
 
-자산 누락 상태로도 페이지는 동작한다 (`<img onError>` fallback). 그래도 production 배포 전 한 번 생성해서 커밋해 두는 것을 권장.
+대안 backend (`OPENAI_API_KEY` + `gpt-image-1`) 는 `scripts/_image_backend.py` 의
+`OpenAIImageBackend` 참고.
+
+자산 누락 상태로도 페이지는 동작한다 (PersonaCard 가 sex 색 gradient placeholder 로 fallback,
+`<img onError>` 로 illustration 숨김). 그래도 production 배포 전 한 번 생성해서 커밋해 두는 것을 권장.
 
 ## 배포
 
