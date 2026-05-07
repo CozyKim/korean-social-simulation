@@ -11,6 +11,9 @@ primary_region = "nrt"
   KSS_COOKIE_SAMESITE = "none"
   KSS_COOKIE_SECURE = "true"
   KSS_TRUST_PROXY_HEADERS = "true"
+  # KSS_CORS_ORIGINS 는 secret 으로 설정 — 도메인 변경 시 재배포 없이 갱신 가능.
+  # 미설정 시 기본값 http://localhost:3000 로 떨어져 production Vercel origin 이 차단됨.
+  # 실제 배포 시: flyctl secrets set KSS_CORS_ORIGINS=https://your-vercel-domain.vercel.app
 
 [[services]]
   internal_port = 8001

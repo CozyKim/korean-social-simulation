@@ -10,11 +10,16 @@ flyctl volumes create kss_data --size 5 --region nrt
 flyctl secrets set \
   KSS_OWNER_TOKEN=$(openssl rand -hex 32) \
   KSS_COOKIE_SECRET=$(openssl rand -hex 32) \
+  KSS_CORS_ORIGINS=https://kss.vercel.app \
   VERCEL_REVALIDATE_HOOK_URL=https://kss.vercel.app/api/revalidate \
   VERCEL_REVALIDATE_SECRET=$(openssl rand -hex 32) \
   VLLM_BASE_URL=http://your-vllm-host:8000/v1 \
   VLLM_API_KEY=EMPTY
 ```
+
+`KSS_CORS_ORIGINS` 는 production Vercel origin (예: `https://kss.vercel.app`).
+미설정 시 기본값 `http://localhost:3000` 로 떨어져 cross-origin 요청이 차단된다.
+복수 origin 은 콤마 분리 (`https://kss.vercel.app,https://staging.kss.vercel.app`).
 
 `VERCEL_REVALIDATE_SECRET` 은 Vercel 측 `REVALIDATE_SECRET` 과 동일 값을 써야 인증 통과 (참고: `web/app/api/revalidate/route.ts`).
 
@@ -83,6 +88,7 @@ git commit -m "assets: avatars + illustrations 일괄 생성"
 | `KSS_COOKIE_SAMESITE` | Fly env | `none` (cross-site Vercel↔Fly) |
 | `KSS_COOKIE_SECURE` | Fly env | `true` (production HTTPS) |
 | `KSS_TRUST_PROXY_HEADERS` | Fly env | `true` (Fly proxy 신뢰) |
+| `KSS_CORS_ORIGINS` | Fly secret | 허용할 frontend origin (콤마 분리). 미설정 시 `http://localhost:3000` 로 fallback → production 차단. |
 | `VLLM_BASE_URL` | Fly secret | 게스트 mini-run 백엔드 |
 | `VLLM_API_KEY` | Fly secret | 보통 `EMPTY` |
 | `VERCEL_REVALIDATE_HOOK_URL` | Fly secret | `https://kss.vercel.app/api/revalidate` |
