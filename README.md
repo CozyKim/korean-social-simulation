@@ -275,3 +275,41 @@ uv run ruff check . && uv run ruff format --check .
 ### 크레딧
 
 - Codex OAuth 어댑터는 MIT-licensed [`langchain-codex-oauth`](https://github.com/AnthonyTlei/langchain-codex-oauth) 프로젝트를 참고한 in-tree 포팅입니다.
+
+---
+
+## 프론트엔드 (Next.js, `web/`)
+
+```bash
+cd web
+cp .env.example .env.local
+# NEXT_PUBLIC_API_BASE_URL 을 백엔드 주소(예: http://localhost:8001)로 설정
+npm install
+npm run dev   # http://localhost:3000
+```
+
+빌드/테스트:
+
+```bash
+cd web
+npm run build
+npm run test     # vitest
+npm run lint
+```
+
+## 자산 사전 생성 (랜딩/카테고리 아이콘 + 238장 페르소나 아바타)
+
+```bash
+export OPENAI_API_KEY=sk-...
+uv sync --extra image
+uv run python -m scripts.generate_avatars        # 238장 (멱등)
+uv run python -m scripts.generate_illustrations  # hero/og/favicon/카테고리 5종
+git add web/public/avatars web/public/illustrations
+git commit -m "assets: avatars + illustrations 일괄 생성"
+```
+
+자산 누락 상태로도 페이지는 동작한다 (`<img onError>` fallback). 그래도 production 배포 전 한 번 생성해서 커밋해 두는 것을 권장.
+
+## 배포
+
+`deploy/README.md` 참고. 백엔드는 Fly.io (`flyctl deploy --config deploy/fly.toml`), 프론트엔드는 Vercel (`vercel deploy --prod`). 인스턴스 1대 고정 (JobManager 가 in-memory).
