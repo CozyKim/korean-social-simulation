@@ -15,9 +15,10 @@ export function useSSE(url: string, options: UseSseOptions = {}) {
   const [events, setEvents] = useState<SseEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const lastIdRef = useRef<string>(
-    typeof window !== "undefined" ? sessionStorage.getItem(`sse:lastId:${url}`) ?? "" : "",
-  );
+  // 새 mount 시에는 항상 fresh start. lastId 는 같은 hook instance 의 reconnect (network drop)
+  // 동안에만 유지된다. 페이지 새로고침/재방문 시 sessionStorage 잔존으로 완료된 run 의 replay
+  // 가 N 이전 persona 이벤트를 skip 하던 버그 회피.
+  const lastIdRef = useRef<string>("");
   const sourceRef = useRef<EventSource | null>(null);
   const cancelledRef = useRef(false);
   const terminatedRef = useRef(false);
@@ -47,9 +48,10 @@ export function useSSE(url: string, options: UseSseOptions = {}) {
         if (raw.lastEventId) {
           const newId = parseInt(raw.lastEventId, 10);
           const oldId = parseInt(lastIdRef.current || "0", 10);
+          // 서버는 재연결 시 id=0 의 synthetic started 이벤트를 흘려보낸다.
+          // 새 id 가 기존 stored 보다 클 때만 갱신해 lastId 0 회귀 → 중복 replay 방지.
           if (Number.isFinite(newId) && newId > oldId) {
             lastIdRef.current = raw.lastEventId;
-            sessionStorage.setItem(`sse:lastId:${url}`, raw.lastEventId);
           }
         }
         setEvents((prev) => [...prev, parsed]);
@@ -91,8 +93,7 @@ export function useSSE(url: string, options: UseSseOptions = {}) {
     setEvents([]);
     lastIdRef.current = "";
     terminatedRef.current = false;
-    sessionStorage.removeItem(`sse:lastId:${url}`);
-  }, [url]);
+  }, []);
 
   return { events, connected, error, reset };
 }
