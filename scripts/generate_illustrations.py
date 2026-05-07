@@ -137,15 +137,23 @@ def run(
     Returns:
         생성·스킵 카운트.
     """
+    import sys
+
     out_dir.mkdir(parents=True, exist_ok=True)
     generated = 0
     skipped = 0
+    failed = 0
     for spec in ILLUSTRATION_SPECS:
         target = out_dir / spec.filename
         if target.exists() and not force:
             skipped += 1
             continue
-        raw = backend.generate(prompt=spec.prompt, size=spec.size)
+        try:
+            raw = backend.generate(prompt=spec.prompt, size=spec.size)
+        except Exception as exc:  # noqa: BLE001 — single-spec fail isolation
+            failed += 1
+            print(f"[skip] {spec.name}: {type(exc).__name__}: {exc}", file=sys.stderr)
+            continue
         # 작은 크기(256/512) 는 gpt-image-1 가 직접 못 받으므로 1024×1024 로 받아 로컬 다운스케일.
         # 형식 변환(to_webp) 전에 리사이즈 — 입력 형식을 보존한 채 작업하면 변환 횟수가 한 번 줄어든다.
         # 더미 bytes (테스트 fixture 등 PNG/WebP 시그니처가 없는 입력) 는 통과시켜 멱등 테스트를 깨지 않는다.
@@ -155,6 +163,8 @@ def run(
             raw = to_webp(raw)
         target.write_bytes(raw)
         generated += 1
+    if failed:
+        print(f"[summary] generated={generated} skipped={skipped} failed={failed}", file=sys.stderr)
     return GenerateSummary(generated=generated, skipped=skipped)
 
 

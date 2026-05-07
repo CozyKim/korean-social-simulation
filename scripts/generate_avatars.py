@@ -88,10 +88,17 @@ def run(
     force: bool = False,
     limit: int | None = None,
 ) -> GenerateSummary:
-    """strata × 아바타 매트릭스를 디스크에 생성. ``limit`` 지정 시 앞에서 N개만."""
+    """strata × 아바타 매트릭스를 디스크에 생성. ``limit`` 지정 시 앞에서 N개만.
+
+    한 strata 의 backend.generate 가 fail (timeout, API error 등) 해도 stderr 에 로그하고
+    다음 strata 로 진행 — 단일 fail 이 전체 batch 를 막지 않도록.
+    """
+    import sys
+
     out_dir.mkdir(parents=True, exist_ok=True)
     generated = 0
     skipped = 0
+    failed = 0
     for key in iter_avatar_keys():
         if limit is not None and generated >= limit:
             break
@@ -99,11 +106,18 @@ def run(
         if target.exists() and not force:
             skipped += 1
             continue
-        raw = backend.generate(prompt=_prompt_for(key), size="1024x1024")
+        try:
+            raw = backend.generate(prompt=_prompt_for(key), size="1024x1024")
+        except Exception as exc:  # noqa: BLE001 — single-strata fail isolation
+            failed += 1
+            print(f"[skip] {key}: {type(exc).__name__}: {exc}", file=sys.stderr)
+            continue
         if raw.startswith(b"\x89PNG"):
             raw = to_webp(raw)
         target.write_bytes(raw)
         generated += 1
+    if failed:
+        print(f"[summary] generated={generated} skipped={skipped} failed={failed}", file=sys.stderr)
     return GenerateSummary(generated=generated, skipped=skipped)
 
 

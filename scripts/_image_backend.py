@@ -58,7 +58,7 @@ class CodexImageBackend:
     """
 
     codex_bin: str = "codex"
-    timeout_s: int = 240
+    timeout_s: int = 360
 
     def generate(self, *, prompt: str, size: ImageSize = "1024x1024") -> bytes:
         if not shutil.which(self.codex_bin):
