@@ -1,5 +1,8 @@
 """랜딩 hero / OG / favicon / 카테고리 아이콘 일괄 생성 (멱등).
 
+기본 backend: codex CLI (ChatGPT 컨슈머 백엔드, OAuth). ``codex login`` 만 필요.
+spec §5.3 의 "모두 codex CLI 로 일괄 생성" 정책.
+
 Usage:
     uv run --extra image python -m scripts.generate_illustrations
     uv run --extra image python -m scripts.generate_illustrations --force
@@ -14,7 +17,7 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts._image_backend import ImageBackend, ImageSize, OpenAIImageBackend, resize_image, to_webp
+from scripts._image_backend import CodexImageBackend, ImageBackend, ImageSize, resize_image, to_webp
 
 DEFAULT_OUT_DIR = Path(__file__).resolve().parent.parent / "web" / "public" / "illustrations"
 
@@ -161,7 +164,7 @@ def main() -> None:
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
-    summary = run(out_dir=args.out, backend=OpenAIImageBackend(), force=args.force)
+    summary = run(out_dir=args.out, backend=CodexImageBackend(), force=args.force)
     print(f"illustrations: generated={summary.generated} skipped={summary.skipped}")
 
 

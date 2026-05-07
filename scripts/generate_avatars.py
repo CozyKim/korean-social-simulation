@@ -1,9 +1,12 @@
 """238장 한국 페르소나 strata 아바타 생성 (멱등).
 
+기본 backend: codex CLI (ChatGPT 컨슈머 백엔드, OAuth). ``codex login`` 만 필요.
+spec §5.3 의 "모두 codex CLI 로 일괄 생성" 정책.
+
 Usage:
     uv run --extra image python -m scripts.generate_avatars
     uv run --extra image python -m scripts.generate_avatars --force
-    uv run --extra image python -m scripts.generate_avatars --limit 5
+    uv run --extra image python -m scripts.generate_avatars --limit 5  # smoke
 
 ``python scripts/generate_avatars.py`` 처럼 직접 실행하면 ``sys.path[0]`` 가
 ``scripts/`` 가 되어 ``scripts._image_backend`` import 가 실패한다. 항상 ``-m`` 으로 호출.
@@ -17,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from korean_social_simulation.data.sampler import _AGE_BANDS
-from scripts._image_backend import ImageBackend, OpenAIImageBackend, to_webp
+from scripts._image_backend import CodexImageBackend, ImageBackend, to_webp
 
 AVATAR_SEXES: tuple[str, ...] = ("female", "male")
 
@@ -111,7 +114,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
 
-    backend = OpenAIImageBackend()
+    backend = CodexImageBackend()
     summary = run(out_dir=args.out, backend=backend, force=args.force, limit=args.limit)
     print(f"avatars: generated={summary.generated} skipped={summary.skipped}")
 

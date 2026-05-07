@@ -1,14 +1,23 @@
-"""OpenAI gpt-image-1 호출 + 디스크 IO 추상.
+"""이미지 생성 backend 추상 + 디스크 IO.
 
-이미지 생성은 외부 호출이라 테스트는 MagicMock으로 backend를 주입한다.
-실 호출은 ``run()`` 의 default ``backend=OpenAIImageBackend()`` 경로에서만 사용.
+두 backend 제공:
+- :class:`CodexImageBackend` — codex CLI (ChatGPT 컨슈머 백엔드, OAuth) 사용. **기본**.
+  spec §5.3 의 "모두 codex CLI 로 일괄 생성" 정책에 부합. ``codex login`` 만 필요.
+- :class:`OpenAIImageBackend` — OpenAI public API ``gpt-image-1``. ``OPENAI_API_KEY`` 필요.
+  대안.
+
+테스트는 MagicMock 으로 backend 를 주입한다 — 실 호출은 default 경로에서만.
 """
 
 from __future__ import annotations
 
 import base64
 import os
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, Protocol
 
 ImageSize = Literal[
@@ -31,8 +40,69 @@ class ImageBackend(Protocol):
 
 
 @dataclass
+class CodexImageBackend:
+    """``codex exec`` subprocess 호출로 ChatGPT 컨슈머 백엔드의 image_gen tool 사용.
+
+    spec §5.3 의 기본 backend. ``codex login`` 으로 OAuth 토큰을 한 번 발급해 두면
+    추가 환경변수 없이 동작. 한 장당 약 30~60초 소요 (GPT-image 호출 + sips 리사이즈).
+
+    내부 동작:
+    1. 임시 디렉터리에 ``out.png`` 경로 지정.
+    2. codex 에이전트에게 PNG 이미지를 ``out.png`` 로 저장하고 정확한 ``size`` 로 리사이즈
+       (``sips`` 사용) 후 종료하라고 지시.
+    3. ``codex exec`` 종료 후 파일 read → bytes 반환.
+
+    Attributes:
+        codex_bin: codex CLI 실행 파일 경로 (기본 ``codex`` — PATH 검색).
+        timeout_s: 한 장당 최대 대기 시간. 기본 240초.
+    """
+
+    codex_bin: str = "codex"
+    timeout_s: int = 240
+
+    def generate(self, *, prompt: str, size: ImageSize = "1024x1024") -> bytes:
+        if not shutil.which(self.codex_bin):
+            raise RuntimeError(f"codex CLI 를 찾을 수 없습니다 (PATH 에 {self.codex_bin} 없음). https://github.com/openai/codex 참고.")
+
+        with tempfile.TemporaryDirectory(prefix="kss-codex-img-") as tmp:
+            tmp_dir = Path(tmp)
+            out_path = tmp_dir / "out.png"
+            instruction = (
+                f"PNG 이미지를 한 장 만들어 ./out.png 경로에 저장해 주세요. "
+                f"이미지 내용: {prompt} "
+                f"최종 파일은 정확히 {size} 픽셀이어야 합니다. "
+                f"필요하면 sips 로 리사이즈한 뒤 'DONE: out.png' 한 줄만 출력하고 종료하세요."
+            )
+            cmd = [
+                self.codex_bin,
+                "exec",
+                "--skip-git-repo-check",
+                "--sandbox",
+                "workspace-write",
+                instruction,
+            ]
+            try:
+                proc = subprocess.run(  # noqa: S603
+                    cmd,
+                    cwd=tmp_dir,
+                    capture_output=True,
+                    timeout=self.timeout_s,
+                    check=False,
+                    text=True,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise RuntimeError(f"codex exec 타임아웃 ({self.timeout_s}s)") from exc
+
+            if proc.returncode != 0:
+                raise RuntimeError(f"codex exec 실패 (exit {proc.returncode}). stderr tail: {proc.stderr[-500:] if proc.stderr else '(empty)'}")
+            if not out_path.exists():
+                raise RuntimeError(f"codex 가 out.png 를 만들지 않음. stdout tail: {proc.stdout[-500:]}")
+            return out_path.read_bytes()
+
+
+@dataclass
 class OpenAIImageBackend:
-    """OpenAI ``gpt-image-1`` 호출. ``OPENAI_API_KEY`` 필수."""
+    """OpenAI ``gpt-image-1`` 호출. ``OPENAI_API_KEY`` 필수. CodexImageBackend 의 대안."""
 
     model: str = "gpt-image-1"
     quality: ImageQuality = "low"
