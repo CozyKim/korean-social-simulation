@@ -273,6 +273,14 @@ async def asimulate(
     if "stance" not in df.columns or df["stance"].isna().all():
         first_errors = df["error"].dropna().head(3).tolist() if "error" in df.columns else []
         if pending_path is not None:
+            # fail 결과도 reactions.parquet 으로 finalize — UI 가 페이지 새로고침 시
+            # disk replay 분기로 fail row 들을 보여줄 수 있도록. mark_failed 가 그 후
+            # status="completed" 를 "failed" 로 덮어쓴다 (final = failed + error).
+            try:
+                Run.finalize_pending(pending_path, sample=sample, extra_columns={"model": model})
+            except FileNotFoundError:
+                # partial.jsonl 이 없는 경우 (예: 페르소나 0건 raise) — 그냥 mark_failed 만.
+                pass
             Run.mark_failed(pending_path, error=f"all_failed: {first_errors}")
         raise RuntimeError(f"All {len(df)} simulations failed. Sample errors: {first_errors}. Check the run directory for details.")
 
