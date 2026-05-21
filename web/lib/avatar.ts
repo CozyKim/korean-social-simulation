@@ -18,7 +18,7 @@ export function ageToBand(age: number): string {
 }
 
 export function avatarUrlForKey(key: string): string {
-  return `/avatars/${encodeURIComponent(key)}.webp`;
+  return `/avatars/pixel/${encodeURIComponent(key)}.webp`;
 }
 
 export function avatarKeyFor(persona: { sex: string; age: number; province: string }): string | null {
