@@ -47,7 +47,13 @@ AVATAR_PROVINCES: tuple[str, ...] = (
 # ``_AGE_BANDS`` 는 ``[(upper_bound, label), ...]`` 형태이므로 라벨만 추출해 사용.
 _AGE_BAND_LABELS: tuple[str, ...] = tuple(label for _, label in _AGE_BANDS)
 
+# 출력 디렉터리의 ``pixel`` 세그먼트는 프론트 ``web/lib/avatar.ts`` 의 avatarUrlForKey
+# (``/avatars/pixel/...``) 와 일치해야 한다. 한쪽만 바꾸면 카드 아바타가 silent 404.
 DEFAULT_OUT_DIR = Path(__file__).resolve().parent.parent / "web" / "public" / "avatars" / "pixel"
+
+# 카드 렌더 슬롯은 40px(persona-card h-10 w-10); 256px 는 retina/zoom 여유분.
+_AVATAR_PX = 256
+_WEBP_QUALITY = 85
 
 _AGE_BAND_DESC = {
     "~19": "10대 후반",
@@ -61,6 +67,12 @@ _AGE_BAND_DESC = {
 
 _SEX_DESC = {"female": "여성", "male": "남성"}
 
+# 프롬프트용 성별 시각 단서 — _SEX_DESC 와 같은 키로 매핑.
+_SEX_VISUAL = {
+    "female": "여성 헤어스타일과 여성복(블라우스/카디건/스웨터/원피스 등), 남성 정장·넥타이·콧수염·턱수염 금지",
+    "male": "남성 헤어스타일과 남성복(셔츠/재킷 등), 립스틱·화장·치마·원피스 금지",
+}
+
 
 def iter_avatar_keys() -> Iterator[str]:
     """{sex}_{age_band}_{province} 형식 strata 키를 결정적 순서로 yield."""
@@ -73,11 +85,7 @@ def iter_avatar_keys() -> Iterator[str]:
 def _prompt_for(key: str) -> str:
     sex, age_band, province = key.split("_", 2)
     sex_desc = _SEX_DESC[sex]
-    sex_visual = (
-        "여성 헤어스타일과 여성복(블라우스/카디건/스웨터/원피스 등), 남성 정장·넥타이·콧수염·턱수염 금지"
-        if sex == "female"
-        else "남성 헤어스타일과 남성복(셔츠/재킷 등), 립스틱·화장·치마·원피스 금지"
-    )
+    sex_visual = _SEX_VISUAL[sex]
     return (
         f"한국인 {sex_desc}, {_AGE_BAND_DESC[age_band]}, {province} 거주, 정면 흉상. "
         f"성별 시각 단서: {sex_visual}. "
@@ -139,10 +147,12 @@ def run(
             print(f"[skip] {key}: {type(exc).__name__}: {exc}", file=sys.stderr)
             continue
         if raw.startswith(b"\x89PNG"):
-            raw = to_webp(raw)
-            # pixel 아바타는 256x256 아이콘 사이즈로 다운스케일 — 1024 원본은 디테일 과다.
-            # PNG 분기 안에서만 resize → mock bytes 를 쓰는 테스트와도 호환.
-            raw = resize_image(raw, (256, 256), quality=85)
+            # 1024 원본을 아이콘 사이즈로 다운스케일 — 디테일 과다 방지.
+            # 리사이즈(PNG 무손실)를 먼저, 그다음 to_webp 한 번 → WebP 이중 인코딩/이중
+            # 양자화 회피(픽셀 아트 엣지에 특히 유리). 둘 다 PNG 분기 안에 둬서 mock
+            # bytes 를 쓰는 테스트와도 호환.
+            raw = resize_image(raw, (_AVATAR_PX, _AVATAR_PX))
+            raw = to_webp(raw, quality=_WEBP_QUALITY)
         target.write_bytes(raw)
         generated += 1
         consecutive_fails = 0
